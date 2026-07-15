@@ -1,110 +1,251 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useState } from "react";
 import { AppShell } from "@/components/AppShell";
-import { trainees, dashboardMetrics } from "@/lib/mock-data";
+import {
+  DEPARTMENTS,
+  DIFFICULTIES,
+  PROJECTS,
+  PROVIDERS,
+  SCENARIOS,
+  TRAINING_MODES,
+  saveSession,
+  type TrainingSession,
+} from "@/lib/session";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Trainer Dashboard · KGIS Sales Training AI" },
-      { name: "description", content: "AI-powered roleplay, coaching and sales readiness evaluation for KGIS telecom sales agents." },
+      { title: "Start Training · KGIS Sales Training AI" },
+      {
+        name: "description",
+        content:
+          "Begin an AI-powered sales roleplay for US telecom call handling — configure the trainee, project, module and scenario.",
+      },
       { property: "og:title", content: "KGIS Sales Training AI" },
-      { property: "og:description", content: "AI-powered roleplay, coaching and sales readiness evaluation." },
+      {
+        property: "og:description",
+        content: "AI-powered call flow practice, customer roleplay, coaching and readiness evaluation.",
+      },
     ],
   }),
-  component: Dashboard,
+  component: StartTraining,
 });
 
-function Metric({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
-  return (
-    <div className="rounded-xl border border-border bg-surface p-5 shadow-card">
-      <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div className="mt-2 text-3xl font-semibold tracking-tight text-foreground">{value}</div>
-      {sub && <div className="mt-1 text-xs text-muted-foreground">{sub}</div>}
-    </div>
-  );
-}
+type FormState = TrainingSession;
 
-function ReadinessBadge({ level }: { level: string }) {
-  const styles: Record<string, string> = {
-    "Production Ready": "bg-[color-mix(in_oklab,var(--success)_15%,transparent)] text-[color-mix(in_oklab,var(--success)_60%,black)]",
-    "Coaching": "bg-teal-soft text-teal",
-    "Needs Practice": "bg-[color-mix(in_oklab,var(--warning)_20%,transparent)] text-[color-mix(in_oklab,var(--warning)_50%,black)]",
-  };
-  return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${styles[level] ?? ""}`}>
-      {level}
-    </span>
-  );
-}
+const initial: FormState = {
+  salespersonName: "",
+  employeeId: "",
+  department: DEPARTMENTS[0],
+  batchName: "",
+  project: PROJECTS[0],
+  provider: PROVIDERS[0],
+  trainingMode: TRAINING_MODES[1].options[0], // Complete end-to-end sales call
+  scenario: SCENARIOS[0],
+  difficulty: DIFFICULTIES[1],
+};
 
-function Dashboard() {
+function StartTraining() {
   const navigate = useNavigate();
+  const [form, setForm] = useState<FormState>(initial);
+  const [error, setError] = useState<string | null>(null);
+
+  const update = <K extends keyof FormState>(key: K, value: FormState[K]) =>
+    setForm((f) => ({ ...f, [key]: value }));
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.salespersonName.trim() || !form.employeeId.trim() || !form.batchName.trim()) {
+      setError("Salesperson Name, Employee ID and Batch Name are required.");
+      return;
+    }
+    setError(null);
+    saveSession(form);
+    navigate({ to: "/roleplay" });
+  };
+
   return (
     <AppShell>
       <div className="mb-8">
-        <h1 className="text-3xl font-semibold tracking-tight text-foreground">KGIS Sales Training AI</h1>
+        <h1 className="text-3xl font-semibold tracking-tight text-foreground">
+          Start Sales Roleplay
+        </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          AI-powered roleplay, coaching and sales readiness evaluation
+          Configure the trainee and scenario, then begin a live AI voice roleplay.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Metric label="Active Trainees" value={dashboardMetrics.activeTrainees} sub="Across 3 batches" />
-        <Metric label="Roleplays Completed" value={dashboardMetrics.roleplaysCompleted} sub="Last 30 days" />
-        <Metric label="Average Score" value={`${dashboardMetrics.averageScore}%`} sub="+4% vs last cycle" />
-        <Metric label="Production Ready" value={dashboardMetrics.productionReady} sub="Certified this month" />
-      </div>
-
-      <div className="mt-10 rounded-xl border border-border bg-surface shadow-card">
-        <div className="flex items-center justify-between border-b border-border px-6 py-4">
-          <div>
-            <h2 className="text-base font-semibold text-foreground">Trainees</h2>
-            <p className="text-xs text-muted-foreground">Track progression and launch a live roleplay</p>
+      <form
+        onSubmit={submit}
+        className="rounded-2xl border border-border bg-surface p-6 shadow-card"
+      >
+        <section>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Trainee
+          </h2>
+          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+            <Field label="Salesperson Name" required>
+              <input
+                type="text"
+                value={form.salespersonName}
+                onChange={(e) => update("salespersonName", e.target.value)}
+                maxLength={100}
+                className={inputCls}
+                placeholder="e.g. Aditi Sharma"
+              />
+            </Field>
+            <Field label="Employee ID" required>
+              <input
+                type="text"
+                value={form.employeeId}
+                onChange={(e) => update("employeeId", e.target.value)}
+                maxLength={40}
+                className={inputCls}
+                placeholder="e.g. KGIS-1042"
+              />
+            </Field>
+            <Field label="Department">
+              <Select
+                value={form.department}
+                onChange={(v) => update("department", v)}
+                options={DEPARTMENTS as readonly string[]}
+              />
+            </Field>
+            <Field label="Batch Name" required>
+              <input
+                type="text"
+                value={form.batchName}
+                onChange={(e) => update("batchName", e.target.value)}
+                maxLength={40}
+                className={inputCls}
+                placeholder="e.g. Batch A-14"
+              />
+            </Field>
           </div>
-          <Link
-            to="/scenarios"
-            className="rounded-md border border-border bg-surface px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary"
+        </section>
+
+        <section className="mt-8">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Project &amp; Provider
+          </h2>
+          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+            <Field label="Project">
+              <Select
+                value={form.project}
+                onChange={(v) => update("project", v)}
+                options={PROJECTS as readonly string[]}
+              />
+            </Field>
+            <Field label="Telecom Provider">
+              <Select
+                value={form.provider}
+                onChange={(v) => update("provider", v)}
+                options={PROVIDERS as readonly string[]}
+              />
+            </Field>
+          </div>
+        </section>
+
+        <section className="mt-8">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Training Module
+          </h2>
+          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+            <Field label="Training Mode">
+              <select
+                value={form.trainingMode}
+                onChange={(e) => update("trainingMode", e.target.value)}
+                className={inputCls}
+              >
+                {TRAINING_MODES.map((group) => (
+                  <optgroup key={group.group} label={group.group}>
+                    {group.options.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </Field>
+            <Field label="Customer Scenario">
+              <Select
+                value={form.scenario}
+                onChange={(v) => update("scenario", v)}
+                options={SCENARIOS as readonly string[]}
+              />
+            </Field>
+            <Field label="Difficulty Level">
+              <Select
+                value={form.difficulty}
+                onChange={(v) => update("difficulty", v)}
+                options={DIFFICULTIES as readonly string[]}
+              />
+            </Field>
+          </div>
+        </section>
+
+        {error && (
+          <div className="mt-6 rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            {error}
+          </div>
+        )}
+
+        <div className="mt-8 flex items-center justify-end gap-3">
+          <button
+            type="submit"
+            className="rounded-md bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground shadow-card hover:opacity-90"
           >
-            Browse scenarios
-          </Link>
+            Begin Roleplay
+          </button>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
-                <th className="px-6 py-3 font-medium">Name</th>
-                <th className="px-6 py-3 font-medium">Batch</th>
-                <th className="px-6 py-3 font-medium">Last Scenario</th>
-                <th className="px-6 py-3 font-medium">Score</th>
-                <th className="px-6 py-3 font-medium">Readiness</th>
-                <th className="px-6 py-3 font-medium text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {trainees.map((t) => (
-                <tr key={t.id} className="border-t border-border">
-                  <td className="px-6 py-3 font-medium text-foreground">{t.name}</td>
-                  <td className="px-6 py-3 text-muted-foreground">{t.batch}</td>
-                  <td className="px-6 py-3 text-muted-foreground">{t.lastScenario}</td>
-                  <td className="px-6 py-3">
-                    <span className="font-semibold text-foreground">{t.score}</span>
-                    <span className="text-muted-foreground">/100</span>
-                  </td>
-                  <td className="px-6 py-3"><ReadinessBadge level={t.readiness} /></td>
-                  <td className="px-6 py-3 text-right">
-                    <button
-                      onClick={() => navigate({ to: "/roleplay", search: { trainee: t.id } as never })}
-                      className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90"
-                    >
-                      Start Roleplay
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      </form>
     </AppShell>
+  );
+}
+
+const inputCls =
+  "w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring";
+
+function Field({
+  label,
+  required,
+  children,
+}: {
+  label: string;
+  required?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-xs font-medium text-foreground">
+        {label} {required && <span className="text-destructive">*</span>}
+      </span>
+      {children}
+    </label>
+  );
+}
+
+function Select({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: readonly string[];
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className={inputCls}
+    >
+      {options.map((opt) => (
+        <option key={opt} value={opt}>
+          {opt}
+        </option>
+      ))}
+    </select>
   );
 }
