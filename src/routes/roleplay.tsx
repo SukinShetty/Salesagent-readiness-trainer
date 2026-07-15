@@ -23,11 +23,14 @@ export const Route = createFileRoute("/roleplay")({
 
 type SessionState = "Ready" | "Connecting" | "Listening" | "Speaking" | "Completed";
 
-declare global {
+declare module "react" {
   namespace JSX {
     interface IntrinsicElements {
       "elevenlabs-convai": React.DetailedHTMLProps<
-        React.HTMLAttributes<HTMLElement> & { "agent-id"?: string; variant?: string },
+        React.HTMLAttributes<HTMLElement> & {
+          "agent-id"?: string;
+          variant?: string;
+        },
         HTMLElement
       >;
     }
