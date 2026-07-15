@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useConversation } from "@elevenlabs/react";
 import { AppShell } from "@/components/AppShell";
 import { scenarios, trainees, demoTranscript } from "@/lib/mock-data";
 
@@ -21,101 +22,150 @@ export const Route = createFileRoute("/roleplay")({
   component: LiveRoleplay,
 });
 
-type SessionState = "Ready" | "Connecting" | "Listening" | "Speaking" | "Completed";
+type DisplayStatus =
+  | "Ready"
+  | "Connecting"
+  | "Customer Listening"
+  | "Customer Speaking"
+  | "Roleplay Completed"
+  | "Connection Failed";
 
-declare module "react" {
-  namespace JSX {
-    interface IntrinsicElements {
-      "elevenlabs-convai": React.DetailedHTMLProps<
-        React.HTMLAttributes<HTMLElement> & {
-          "agent-id"?: string;
-          variant?: string;
-        },
-        HTMLElement
-      >;
-    }
-  }
+/**
+ * For a future authenticated agent, replace this with a fetch to a backend
+ * server function that returns { conversationToken } from ElevenLabs, then
+ * call conversation.startSession({ conversationToken, connectionType: "webrtc" }).
+ */
+async function getSessionStartArgs() {
+  return { agentId: AGENT_ID, connectionType: "webrtc" as const };
 }
 
 function LiveRoleplay() {
   const { trainee: traineeId, scenario: scenarioId } = Route.useSearch();
   const navigate = useNavigate();
 
-  const trainee =
-    trainees.find((t) => t.id === traineeId) ?? trainees[0];
+  const trainee = trainees.find((t) => t.id === traineeId) ?? trainees[0];
   const scenario =
     scenarios.find((s) => s.id === scenarioId) ??
     scenarios.find((s) => s.id === "price-sensitive") ??
     scenarios[0];
 
-  const [sessionState, setSessionState] = useState<SessionState>("Ready");
   const [transcriptText, setTranscriptText] = useState("");
-  const widgetRef = useRef<HTMLElement | null>(null);
+  const [hasStarted, setHasStarted] = useState(false);
+  const [ended, setEnded] = useState(false);
+  const [micDenied, setMicDenied] = useState(false);
+  const [connectFailed, setConnectFailed] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const appendedIdsRef = useRef<Set<string>>(new Set());
 
-  // Listen to widget lifecycle events for visual state + transcript capture
-  useEffect(() => {
-    const el = widgetRef.current;
-    if (!el) return;
-
-    const appendLine = (who: "AI Customer" | "Trainee", text: string) => {
-      if (!text) return;
-      setTranscriptText((prev) => (prev ? `${prev}\n${who}: ${text}` : `${who}: ${text}`));
-    };
-
-    const onCall = () => setSessionState("Connecting");
-    const onConnect = () => setSessionState("Listening");
-    const onDisconnect = () => setSessionState("Completed");
-    const onMessage = (e: Event) => {
-      const detail = (e as CustomEvent).detail as
-        | { source?: string; message?: string; text?: string }
-        | undefined;
-      if (!detail) return;
-      const text = detail.message ?? detail.text ?? "";
-      if (detail.source === "user") appendLine("Trainee", text);
-      else if (detail.source === "ai") appendLine("AI Customer", text);
-    };
-    const onModeChange = (e: Event) => {
-      const detail = (e as CustomEvent).detail as { mode?: string } | undefined;
-      if (detail?.mode === "speaking") setSessionState("Speaking");
-      else if (detail?.mode === "listening") setSessionState("Listening");
-    };
-
-    el.addEventListener("elevenlabs-convai:call", onCall);
-    el.addEventListener("elevenlabs-convai:connect", onConnect);
-    el.addEventListener("elevenlabs-convai:disconnect", onDisconnect);
-    el.addEventListener("elevenlabs-convai:message", onMessage);
-    el.addEventListener("elevenlabs-convai:mode-change", onModeChange);
-
-    return () => {
-      el.removeEventListener("elevenlabs-convai:call", onCall);
-      el.removeEventListener("elevenlabs-convai:connect", onConnect);
-      el.removeEventListener("elevenlabs-convai:disconnect", onDisconnect);
-      el.removeEventListener("elevenlabs-convai:message", onMessage);
-      el.removeEventListener("elevenlabs-convai:mode-change", onModeChange);
-    };
+  const appendLine = useCallback((who: "AI Customer" | "Trainee", text: string) => {
+    if (!text) return;
+    setTranscriptText((prev) => (prev ? `${prev}\n${who}: ${text}` : `${who}: ${text}`));
   }, []);
 
+  const conversation = useConversation({
+    onConnect: () => {
+      setConnectFailed(false);
+    },
+    onDisconnect: () => {
+      setEnded(true);
+    },
+    onError: () => {
+      setConnectFailed(true);
+    },
+    onMessage: (msg: unknown) => {
+      // The SDK forwards various message shapes; try to extract user/agent text.
+      const m = msg as {
+        source?: string;
+        message?: string;
+        text?: string;
+        type?: string;
+      };
+      const text = m?.message ?? m?.text ?? "";
+      if (!text) return;
+      const key = `${m?.source ?? m?.type ?? "x"}:${text}`;
+      if (appendedIdsRef.current.has(key)) return;
+      appendedIdsRef.current.add(key);
+      if (m?.source === "user" || m?.type === "user_transcript") {
+        appendLine("Trainee", text);
+      } else if (m?.source === "ai" || m?.type === "agent_response") {
+        appendLine("AI Customer", text);
+      }
+    },
+  });
+
+  const status = conversation.status; // "connected" | "connecting" | "disconnected"
+  const isSpeaking = conversation.isSpeaking;
+  const micMuted = isMuted;
+
+  const displayStatus: DisplayStatus = useMemo(() => {
+    if (connectFailed) return "Connection Failed";
+    if (!hasStarted) return "Ready";
+    if (status === "connecting") return "Connecting";
+    if (status === "connected") {
+      return isSpeaking ? "Customer Speaking" : "Customer Listening";
+    }
+    if (ended || status === "disconnected") return "Roleplay Completed";
+    return "Ready";
+  }, [connectFailed, hasStarted, status, isSpeaking, ended]);
+
   const start = useCallback(async () => {
-    setSessionState("Connecting");
+    setConnectFailed(false);
+    setMicDenied(false);
+    setEnded(false);
+    setHasStarted(true);
     try {
       await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
-      /* user can still use widget button */
+      setMicDenied(true);
+      setHasStarted(false);
+      return;
     }
-    widgetRef.current?.dispatchEvent(
-      new CustomEvent("elevenlabs-convai:call", { detail: { config: {} } }),
-    );
-  }, []);
+    try {
+      const args = await getSessionStartArgs();
+      await conversation.startSession(args);
+    } catch {
+      setConnectFailed(true);
+      setHasStarted(false);
+    }
+  }, [conversation]);
 
-  const end = useCallback(() => {
-    widgetRef.current?.dispatchEvent(new CustomEvent("elevenlabs-convai:end"));
-    setSessionState("Completed");
-  }, []);
+  const end = useCallback(async () => {
+    try {
+      await conversation.endSession();
+    } catch {
+      /* noop */
+    }
+    setEnded(true);
+  }, [conversation]);
+
+  const toggleMute = useCallback(async () => {
+    const next = !isMuted;
+    try {
+      // SDK exposes microphone control via setMicMuted when available.
+      const c = conversation as unknown as {
+        setMicMuted?: (m: boolean) => Promise<void> | void;
+      };
+      if (typeof c.setMicMuted === "function") {
+        await c.setMicMuted(next);
+      }
+      setIsMuted(next);
+    } catch {
+      /* noop */
+    }
+  }, [conversation, isMuted]);
 
   const useDemo = () => {
     setTranscriptText(demoTranscript);
-    setSessionState("Completed");
+    setEnded(true);
   };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      conversation.endSession().catch(() => {});
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const goEvaluate = () => {
     if (typeof window !== "undefined") {
@@ -126,12 +176,16 @@ function LiveRoleplay() {
     navigate({ to: "/evaluation" });
   };
 
-  const stateStyles: Record<SessionState, string> = {
+  const statusStyles: Record<DisplayStatus, string> = {
     Ready: "bg-secondary text-secondary-foreground",
     Connecting: "bg-teal-soft text-teal",
-    Listening: "bg-[color-mix(in_oklab,var(--success)_18%,transparent)] text-[color-mix(in_oklab,var(--success)_60%,black)]",
-    Speaking: "bg-[color-mix(in_oklab,var(--warning)_25%,transparent)] text-[color-mix(in_oklab,var(--warning)_50%,black)]",
-    Completed: "bg-secondary text-secondary-foreground",
+    "Customer Listening":
+      "bg-[color-mix(in_oklab,var(--success)_18%,transparent)] text-[color-mix(in_oklab,var(--success)_60%,black)]",
+    "Customer Speaking":
+      "bg-[color-mix(in_oklab,var(--warning)_25%,transparent)] text-[color-mix(in_oklab,var(--warning)_50%,black)]",
+    "Roleplay Completed": "bg-secondary text-secondary-foreground",
+    "Connection Failed":
+      "bg-[color-mix(in_oklab,var(--destructive)_20%,transparent)] text-destructive",
   };
 
   const focusSkills = [
@@ -143,6 +197,8 @@ function LiveRoleplay() {
     "Closing",
   ];
 
+  const isLive = status === "connected" || status === "connecting";
+
   return (
     <AppShell>
       <div className="mb-6 flex items-start justify-between gap-4">
@@ -152,13 +208,13 @@ function LiveRoleplay() {
             Real-time voice conversation with the AI customer
           </p>
         </div>
-        <div className={`rounded-full px-3 py-1 text-xs font-semibold ${stateStyles[sessionState]}`}>
-          {sessionState}
+        <div className={`rounded-full px-3 py-1 text-xs font-semibold ${statusStyles[displayStatus]}`}>
+          {displayStatus}
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
-        {/* LEFT — Session Information */}
+        {/* LEFT */}
         <aside className="space-y-4 lg:col-span-3">
           <div className="rounded-xl border border-border bg-surface p-5 shadow-card">
             <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -203,12 +259,15 @@ function LiveRoleplay() {
           </div>
         </aside>
 
-        {/* CENTER — AI Customer + ElevenLabs widget */}
+        {/* CENTER — AI Customer */}
         <section className="lg:col-span-6">
           <div className="rounded-2xl border border-border bg-gradient-to-br from-surface to-[color-mix(in_oklab,var(--teal-soft)_60%,var(--surface))] p-6 shadow-elevated">
             <div className="flex items-start gap-5">
-              <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-primary text-2xl font-semibold text-primary-foreground shadow-elevated">
+              <div className="relative flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-primary text-2xl font-semibold text-primary-foreground shadow-elevated">
                 RM
+                {displayStatus === "Customer Listening" && (
+                  <span className="pointer-events-none absolute inset-0 rounded-2xl ring-4 ring-teal/40 animate-pulse" />
+                )}
               </div>
               <div className="flex-1">
                 <div className="text-xs font-medium uppercase tracking-wide text-teal">AI Customer</div>
@@ -216,7 +275,7 @@ function LiveRoleplay() {
                   Rachel Miller
                 </h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  US home customer · price-sensitive · works from home · family of four
+                  US home customer · works from home · family of four
                 </p>
                 <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-teal-soft px-3 py-1 text-xs font-medium text-teal">
                   Mood: Cautious but open
@@ -224,60 +283,83 @@ function LiveRoleplay() {
               </div>
             </div>
 
-            {/* Animated waveform placeholder */}
-            <div className="mt-6 flex h-16 items-center justify-center gap-1.5 rounded-xl border border-border bg-surface/60 px-6">
-              {Array.from({ length: 28 }).map((_, i) => {
-                const active = sessionState === "Listening" || sessionState === "Speaking";
+            {/* Custom waveform */}
+            <div className="mt-6 flex h-24 items-center justify-center gap-1.5 rounded-xl border border-border bg-surface/60 px-6">
+              {Array.from({ length: 32 }).map((_, i) => {
+                const speaking = displayStatus === "Customer Speaking";
+                const listening = displayStatus === "Customer Listening";
                 return (
                   <span
                     key={i}
                     className="waveform-bar"
                     style={{
-                      animationDelay: `${i * 60}ms`,
-                      animationPlayState: active ? "running" : "paused",
-                      height: active ? undefined : "6px",
-                      opacity: active ? undefined : 0.25,
+                      animationDelay: `${i * 55}ms`,
+                      animationPlayState: speaking ? "running" : "paused",
+                      height: speaking ? undefined : listening ? "10px" : "6px",
+                      opacity: speaking ? 1 : listening ? 0.5 : 0.25,
                     }}
                   />
                 );
               })}
             </div>
 
-            {/* Embedded ElevenLabs widget (inline, not floating) */}
-            <div className="mt-6 rounded-xl border border-border bg-surface p-4">
-              <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                ElevenLabs Voice Agent
+            {/* Errors */}
+            {micDenied && (
+              <div className="mt-4 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+                <div className="font-semibold">Microphone access denied</div>
+                <p className="mt-1 text-destructive/80">
+                  Enable microphone access in your browser settings to start the roleplay.
+                </p>
+                <button
+                  onClick={start}
+                  className="mt-3 rounded-md bg-destructive px-3 py-1.5 text-xs font-semibold text-destructive-foreground"
+                >
+                  Retry
+                </button>
               </div>
-              <div className="flex min-h-[280px] items-center justify-center">
-                <elevenlabs-convai
-                  ref={(el: HTMLElement | null) => {
-                    widgetRef.current = el;
-                  }}
-                  agent-id={AGENT_ID}
-                  variant="expanded"
-                />
+            )}
+            {connectFailed && !micDenied && (
+              <div className="mt-4 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+                Unable to start roleplay. Please try again.
+                <div className="mt-2">
+                  <button
+                    onClick={start}
+                    className="rounded-md bg-destructive px-3 py-1.5 text-xs font-semibold text-destructive-foreground"
+                  >
+                    Retry
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
+            {/* Controls */}
             <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
               <button
                 onClick={start}
-                disabled={sessionState === "Connecting" || sessionState === "Listening" || sessionState === "Speaking"}
+                disabled={isLive}
                 className="rounded-md bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-card hover:opacity-90 disabled:opacity-60"
               >
                 Start Roleplay
               </button>
               <button
-                onClick={end}
-                className="rounded-md bg-destructive px-5 py-2.5 text-sm font-semibold text-destructive-foreground shadow-card hover:opacity-90"
+                onClick={toggleMute}
+                disabled={!isLive}
+                className="rounded-md border border-border bg-surface px-5 py-2.5 text-sm font-semibold text-foreground shadow-card hover:bg-secondary disabled:opacity-50"
               >
-                End Roleplay
+                {micMuted ? "Unmute Microphone" : "Mute Microphone"}
+              </button>
+              <button
+                onClick={end}
+                disabled={!isLive}
+                className="rounded-md bg-destructive px-5 py-2.5 text-sm font-semibold text-destructive-foreground shadow-card hover:opacity-90 disabled:opacity-50"
+              >
+                End Call
               </button>
             </div>
           </div>
         </section>
 
-        {/* RIGHT — Live Transcript */}
+        {/* RIGHT — Transcript */}
         <aside className="lg:col-span-3">
           <div className="flex h-full flex-col rounded-xl border border-border bg-surface p-5 shadow-card">
             <div className="flex items-center justify-between">
