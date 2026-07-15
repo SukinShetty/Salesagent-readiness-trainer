@@ -162,7 +162,11 @@ function LiveRoleplay() {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      conversation.endSession().catch(() => {});
+      try {
+        void Promise.resolve(conversation.endSession()).catch(() => {});
+      } catch {
+        /* noop */
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
