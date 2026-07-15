@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useConversation } from "@elevenlabs/react";
+import { ConversationProvider, useConversation } from "@elevenlabs/react";
 import { AppShell } from "@/components/AppShell";
 import { scenarios, trainees, demoTranscript } from "@/lib/mock-data";
 
@@ -19,8 +19,16 @@ export const Route = createFileRoute("/roleplay")({
       { name: "description", content: "Live AI voice roleplay with the KGIS AI Telecom Customer." },
     ],
   }),
-  component: LiveRoleplay,
+  component: LiveRoleplayPage,
 });
+
+function LiveRoleplayPage() {
+  return (
+    <ConversationProvider>
+      <LiveRoleplay />
+    </ConversationProvider>
+  );
+}
 
 type DisplayStatus =
   | "Ready"
