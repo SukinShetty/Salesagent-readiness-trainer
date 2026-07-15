@@ -9,8 +9,26 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as ScenariosRouteImport } from './routes/scenarios'
+import { Route as RoleplayRouteImport } from './routes/roleplay'
+import { Route as EvaluationRouteImport } from './routes/evaluation'
 import { Route as IndexRouteImport } from './routes/index'
 
+const ScenariosRoute = ScenariosRouteImport.update({
+  id: '/scenarios',
+  path: '/scenarios',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RoleplayRoute = RoleplayRouteImport.update({
+  id: '/roleplay',
+  path: '/roleplay',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EvaluationRoute = EvaluationRouteImport.update({
+  id: '/evaluation',
+  path: '/evaluation',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -19,28 +37,61 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/evaluation': typeof EvaluationRoute
+  '/roleplay': typeof RoleplayRoute
+  '/scenarios': typeof ScenariosRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/evaluation': typeof EvaluationRoute
+  '/roleplay': typeof RoleplayRoute
+  '/scenarios': typeof ScenariosRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/evaluation': typeof EvaluationRoute
+  '/roleplay': typeof RoleplayRoute
+  '/scenarios': typeof ScenariosRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/evaluation' | '/roleplay' | '/scenarios'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/evaluation' | '/roleplay' | '/scenarios'
+  id: '__root__' | '/' | '/evaluation' | '/roleplay' | '/scenarios'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  EvaluationRoute: typeof EvaluationRoute
+  RoleplayRoute: typeof RoleplayRoute
+  ScenariosRoute: typeof ScenariosRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/scenarios': {
+      id: '/scenarios'
+      path: '/scenarios'
+      fullPath: '/scenarios'
+      preLoaderRoute: typeof ScenariosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/roleplay': {
+      id: '/roleplay'
+      path: '/roleplay'
+      fullPath: '/roleplay'
+      preLoaderRoute: typeof RoleplayRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/evaluation': {
+      id: '/evaluation'
+      path: '/evaluation'
+      fullPath: '/evaluation'
+      preLoaderRoute: typeof EvaluationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -53,17 +104,10 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  EvaluationRoute: EvaluationRoute,
+  RoleplayRoute: RoleplayRoute,
+  ScenariosRoute: ScenariosRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
