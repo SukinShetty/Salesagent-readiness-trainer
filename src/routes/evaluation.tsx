@@ -1,10 +1,14 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import {
   loadLastEvaluation,
+  saveEvaluation,
+  type CertificationOutcome,
+  type ComplianceStatus,
   type EvaluationRecord,
   type ReadinessBand,
+  type StageStatus,
 } from "@/lib/session";
 
 export const Route = createFileRoute("/evaluation")({
@@ -13,17 +17,44 @@ export const Route = createFileRoute("/evaluation")({
       { title: "Evaluation Report · KGIS Sales Training AI" },
       {
         name: "description",
-        content: "QMF-style sales roleplay evaluation with coaching feedback and readiness status.",
+        content:
+          "QMF-style trainer evaluation with call flow adherence, compliance gates, transcript evidence, and coaching actions.",
       },
     ],
   }),
   component: EvaluationPage,
 });
 
+type TrainerDecision =
+  | "Accept AI Recommendation"
+  | "Override to Conditional Pass"
+  | "Override to Needs More Practice"
+  | "Override to Not Certified";
+
 function EvaluationPage() {
   const [record, setRecord] = useState<EvaluationRecord | null>(null);
-  useEffect(() => setRecord(loadLastEvaluation()), []);
+  const [openCat, setOpenCat] = useState<string | null>(null);
+  const [trainerDecision, setTrainerDecision] = useState<TrainerDecision>(
+    "Accept AI Recommendation",
+  );
+  const [trainerNotes, setTrainerNotes] = useState("");
   const navigate = useNavigate();
+
+  useEffect(() => setRecord(loadLastEvaluation()), []);
+
+  const finalOutcome = useMemo<CertificationOutcome | null>(() => {
+    if (!record) return null;
+    switch (trainerDecision) {
+      case "Override to Conditional Pass":
+        return "Conditional Pass";
+      case "Override to Needs More Practice":
+        return "Needs More Practice";
+      case "Override to Not Certified":
+        return "Not Certified";
+      default:
+        return record.certification;
+    }
+  }, [record, trainerDecision]);
 
   if (!record) {
     return (
@@ -45,9 +76,18 @@ function EvaluationPage() {
   }
 
   const s = record.session;
+  const criticalFailed = record.criticalComplianceStatus === "Failed";
 
   const download = () => {
-    const blob = new Blob([JSON.stringify(record, null, 2)], { type: "application/json" });
+    const payload = {
+      ...record,
+      trainerReview: {
+        decision: trainerDecision,
+        notes: trainerNotes,
+        finalOutcome,
+      },
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -56,15 +96,22 @@ function EvaluationPage() {
     URL.revokeObjectURL(url);
   };
 
+  const assignNext = () => {
+    // Persist trainer notes on this evaluation before assigning.
+    saveEvaluation({ ...record, coachingSummary: record.coachingSummary });
+    navigate({ to: "/" });
+  };
+
   return (
     <AppShell>
+      {/* Header */}
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight text-foreground">
             Evaluation Report
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {s.salespersonName} · {s.employeeId} · {s.scenario}
+            Trainer-led QMF assessment · {s.salespersonName} · {s.employeeId}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -74,12 +121,6 @@ function EvaluationPage() {
           >
             Practice Again
           </button>
-          <Link
-            to="/"
-            className="rounded-md border border-border bg-surface px-3 py-2 text-sm font-medium text-foreground hover:bg-secondary"
-          >
-            Start New Scenario
-          </Link>
           <Link
             to="/trainer"
             className="rounded-md border border-border bg-surface px-3 py-2 text-sm font-medium text-foreground hover:bg-secondary"
@@ -95,117 +136,354 @@ function EvaluationPage() {
         </div>
       </div>
 
-      {/* Session summary */}
-      <div className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-4 lg:grid-cols-8">
+      {/* Session summary chips */}
+      <div className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-3 lg:grid-cols-6">
         <SummaryChip label="Salesperson" value={s.salespersonName} />
         <SummaryChip label="Employee ID" value={s.employeeId} />
         <SummaryChip label="Department" value={s.department} />
+        <SummaryChip label="Batch" value={s.batchName} />
         <SummaryChip label="Project" value={s.project} />
-        <SummaryChip label="Provider" value={s.provider} />
-        <SummaryChip label="Scenario" value={s.scenario} />
+        <SummaryChip label="Telecom Provider" value={s.provider} />
         <SummaryChip label="Training Mode" value={s.trainingMode} />
-        <SummaryChip
-          label="Date · Duration"
-          value={`${new Date(record.date).toLocaleDateString()} · ${formatDuration(
-            record.durationSeconds,
-          )}`}
-        />
+        <SummaryChip label="Scenario" value={s.scenario} />
+        <SummaryChip label="Difficulty" value={s.difficulty} />
+        <SummaryChip label="Roleplay Date" value={new Date(record.date).toLocaleDateString()} />
+        <SummaryChip label="Call Duration" value={formatDuration(record.durationSeconds)} />
+        <SummaryChip label="Number of Turns" value={String(record.turns ?? "—")} />
       </div>
 
-      {/* Score / readiness / certification */}
+      {/* Top-line score + certification */}
       <div className="mt-6 grid grid-cols-1 gap-5 md:grid-cols-3">
         <div className="rounded-xl border border-border bg-gradient-to-br from-primary to-[color-mix(in_oklab,var(--primary)_70%,var(--teal))] p-6 text-primary-foreground shadow-elevated">
           <div className="text-xs font-medium uppercase tracking-wide opacity-80">Overall Score</div>
           <div className="mt-2 text-5xl font-semibold tracking-tight">{record.overallScore}</div>
           <div className="mt-1 text-xs opacity-80">out of 100</div>
+          <div className="mt-4 border-t border-white/20 pt-3 text-xs opacity-90">
+            Call Flow Adherence: <span className="font-semibold">{record.callFlowAdherencePct ?? 0}%</span>
+          </div>
         </div>
         <div className="rounded-xl border border-border bg-surface p-6 shadow-card">
           <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Readiness Status
+            Readiness Level
           </div>
           <div className="mt-2 text-2xl font-semibold text-foreground">{record.readiness}</div>
           <div className="mt-1 text-xs text-muted-foreground">{readinessBlurb(record.readiness)}</div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <StatusPill
+              label={`Compliance: ${record.criticalComplianceStatus ?? "Passed"}`}
+              tone={
+                record.criticalComplianceStatus === "Failed"
+                  ? "destructive"
+                  : record.criticalComplianceStatus === "Passed with Warning"
+                    ? "warning"
+                    : "success"
+              }
+            />
+            <StatusPill
+              label={record.assessmentValidity ?? "Practice Attempt Only"}
+              tone={
+                record.assessmentValidity === "Valid for Certification"
+                  ? "teal"
+                  : record.assessmentValidity === "Invalid Due to Incomplete Call"
+                    ? "destructive"
+                    : "muted"
+              }
+            />
+          </div>
         </div>
         <div className="rounded-xl border border-border bg-surface p-6 shadow-card">
           <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Certification Recommendation
+            Certification Decision
           </div>
           <div className="mt-2 text-2xl font-semibold text-teal">{record.certification}</div>
           <div className="mt-1 text-xs text-muted-foreground">
-            Based on 7-category QMF scorecard
+            {record.certificationReason ?? "Based on the QMF scorecard."}
+          </div>
+          <div className="mt-4">
+            <StatusPill
+              label={`Mode: ${record.mode ?? "Full Call Flow Practice"}`}
+              tone="muted"
+            />
           </div>
         </div>
       </div>
 
-      {/* Category scores */}
-      <div className="mt-6 grid grid-cols-1 gap-5 lg:grid-cols-3">
-        <div className="rounded-xl border border-border bg-surface p-6 shadow-card lg:col-span-2">
-          <h2 className="text-base font-semibold text-foreground">Category Scores</h2>
-          <div className="mt-5 space-y-4">
-            {record.categories.map((c) => {
-              const pct = (c.score / c.max) * 100;
-              return (
-                <div key={c.name}>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-foreground">{c.name}</span>
-                    <span className="font-semibold text-foreground">
-                      {c.score}
-                      <span className="text-muted-foreground">/{c.max}</span>
-                    </span>
+      {criticalFailed && (
+        <div className="mt-5 rounded-xl border border-[var(--destructive)] bg-[color-mix(in_oklab,var(--destructive)_10%,transparent)] p-4 text-sm font-medium text-destructive">
+          Critical compliance requirement missed. Certification is not recommended.
+        </div>
+      )}
+
+      {/* Call flow adherence */}
+      <Section title="Call Flow Adherence">
+        <div className="overflow-hidden rounded-xl border border-border">
+          <table className="w-full border-collapse text-sm">
+            <thead className="bg-secondary text-xs uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th className="px-4 py-2 text-left font-medium">Stage</th>
+                <th className="px-4 py-2 text-left font-medium">Status</th>
+                <th className="px-4 py-2 text-left font-medium">Score</th>
+                <th className="px-4 py-2 text-left font-medium">Evidence · Miss · Coaching</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(record.callFlow ?? []).map((stage, i) => (
+                <tr key={stage.stage} className={i % 2 ? "bg-surface" : "bg-background"}>
+                  <td className="px-4 py-3 align-top font-medium text-foreground">{stage.stage}</td>
+                  <td className="px-4 py-3 align-top">
+                    <StageStatusPill status={stage.status} />
+                  </td>
+                  <td className="px-4 py-3 align-top text-foreground">
+                    {stage.status === "Not Applicable" ? "—" : `${stage.score}/${stage.max}`}
+                  </td>
+                  <td className="px-4 py-3 align-top text-xs text-muted-foreground">
+                    {stage.evidence && (
+                      <div>
+                        <span className="font-medium text-foreground">Evidence:</span>{" "}
+                        <span className="italic">“{stage.evidence}”</span>
+                      </div>
+                    )}
+                    {stage.missed && (
+                      <div className="mt-1">
+                        <span className="font-medium text-[color-mix(in_oklab,var(--warning)_50%,black)]">Missed:</span>{" "}
+                        {stage.missed}
+                      </div>
+                    )}
+                    {stage.coaching && (
+                      <div className="mt-1">
+                        <span className="font-medium text-teal">Coaching:</span> {stage.coaching}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Section>
+
+      {/* Category scores + details */}
+      <Section title="Category Score Details">
+        <div className="space-y-3">
+          {(record.categoryDetails ?? []).map((c) => {
+            const pct = (c.score / c.max) * 100;
+            const isOpen = openCat === c.name;
+            return (
+              <div
+                key={c.name}
+                className="rounded-xl border border-border bg-surface shadow-card"
+              >
+                <button
+                  onClick={() => setOpenCat(isOpen ? null : c.name)}
+                  className="flex w-full items-center gap-4 px-5 py-4 text-left"
+                >
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-medium text-foreground">{c.name}</span>
+                      <span className="font-semibold text-foreground">
+                        {c.score}
+                        <span className="text-muted-foreground">/{c.max}</span>
+                      </span>
+                    </div>
+                    <div className="mt-2">
+                      <ScoreBar value={pct} />
+                    </div>
                   </div>
-                  <div className="mt-1.5"><ScoreBar value={pct} /></div>
-                </div>
-              );
-            })}
+                  <span className="text-xs text-muted-foreground">{isOpen ? "Hide" : "Details"}</span>
+                </button>
+                {isOpen && (
+                  <div className="grid grid-cols-1 gap-3 border-t border-border px-5 py-4 text-sm md:grid-cols-2">
+                    <DetailBlock label="What was done well" value={c.wentWell} />
+                    <DetailBlock label="What was missed" value={c.missed} />
+                    <DetailBlock label="Evidence from transcript" value={`“${c.evidence}”`} italic />
+                    <DetailBlock label="Improvement action" value={c.improvement} tone="teal" />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </Section>
+
+      {/* Compliance gate */}
+      <Section title="Compliance and Non-Negotiables">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {(record.compliance ?? []).map((c) => (
+            <div
+              key={c.item}
+              className="flex items-center justify-between rounded-lg border border-border bg-surface px-4 py-3 shadow-card"
+            >
+              <div>
+                <div className="text-sm font-medium text-foreground">{c.item}</div>
+                {c.critical && (
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Critical
+                  </div>
+                )}
+              </div>
+              <ComplianceBadge status={c.status} />
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      {/* Transcript evidence */}
+      <Section title="Transcript Evidence">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          {(record.evidence ?? []).map((e) => (
+            <div
+              key={e.label}
+              className="rounded-xl border border-border bg-surface p-4 shadow-card"
+            >
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {e.label}
+              </div>
+              <p className="mt-2 text-sm italic text-foreground">“{e.quote}”</p>
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      {/* Coaching insights */}
+      <Section title="Coaching Insights">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+          <div className="rounded-xl border border-border bg-surface p-5 shadow-card lg:col-span-3">
+            <h3 className="text-sm font-semibold text-foreground">Coaching Summary</h3>
+            <p className="mt-2 text-sm leading-relaxed text-foreground">{record.coachingSummary}</p>
+          </div>
+          <BulletCard title="Strengths Demonstrated" items={record.strengths.slice(0, 3)} tone="success" />
+          <BulletCard title="Missed Expectations" items={record.missed.slice(0, 5)} tone="warning" />
+          <div className="rounded-xl border border-border bg-surface p-5 shadow-card">
+            <h3 className="text-sm font-semibold text-foreground">Priority Improvement Actions</h3>
+            <ol className="mt-3 space-y-3 text-sm">
+              {(record.priorityActions ?? []).map((a, i) => (
+                <li key={i} className="rounded-lg bg-teal-soft p-3">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-teal">
+                    Action {i + 1}
+                  </div>
+                  <div className="mt-1 font-medium text-foreground">{a.what}</div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">Why:</span> {a.why}
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">Do:</span> {a.do}
+                  </div>
+                </li>
+              ))}
+            </ol>
           </div>
         </div>
 
-        <div className="space-y-5">
-          <div className="rounded-xl border border-border bg-surface p-6 shadow-card">
-            <h3 className="text-sm font-semibold text-foreground">Coaching Summary</h3>
-            <p className="mt-3 text-sm leading-relaxed text-foreground">
-              {record.coachingSummary}
-            </p>
+        {record.practicePrescription && (
+          <div className="mt-5 rounded-xl border border-border bg-surface p-5 shadow-card">
+            <h3 className="text-sm font-semibold text-foreground">Practice Prescription</h3>
+            <div className="mt-3 grid grid-cols-2 gap-3 text-sm md:grid-cols-5">
+              <PrescriptionItem label="Recommended Scenario" value={record.practicePrescription.scenario} />
+              <PrescriptionItem label="Training Mode" value={record.practicePrescription.mode} />
+              <PrescriptionItem label="Difficulty" value={record.practicePrescription.difficulty} />
+              <PrescriptionItem label="Focus Skill" value={record.practicePrescription.focus} />
+              <PrescriptionItem
+                label="Suggested Attempts"
+                value={`${record.practicePrescription.attempts} practice call${record.practicePrescription.attempts === 1 ? "" : "s"}`}
+              />
+            </div>
           </div>
-          <div className="rounded-xl border border-border bg-surface p-6 shadow-card">
-            <h3 className="text-sm font-semibold text-foreground">Recommended Next Scenario</h3>
-            <div className="mt-2 rounded-lg bg-teal-soft p-4">
-              <div className="text-base font-semibold text-teal">{record.nextScenario}</div>
-              <div className="mt-1 text-xs text-muted-foreground">
-                Targets the largest gap from this session
+        )}
+      </Section>
+
+      {/* Performance summary */}
+      <Section title="Performance Summary">
+        <div className="rounded-xl border border-border bg-surface p-5 shadow-card">
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-6">
+            <PerfCell label="Current Score" value={`${record.overallScore}`} />
+            <PerfCell
+              label="Previous Score"
+              value={record.previousScore != null ? `${record.previousScore}` : "—"}
+            />
+            <PerfCell
+              label="Change"
+              value={
+                record.previousScore != null
+                  ? `${record.overallScore - record.previousScore >= 0 ? "+" : ""}${record.overallScore - record.previousScore}`
+                  : "First recorded attempt"
+              }
+            />
+            <PerfCell label="Strongest Stage" value={record.strongestStage ?? "—"} />
+            <PerfCell label="Weakest Stage" value={record.weakestStage ?? "—"} />
+            <PerfCell label="Production Readiness" value={record.readiness} />
+          </div>
+        </div>
+      </Section>
+
+      {/* Trainer review */}
+      <Section title="Trainer Review">
+        <div className="rounded-xl border border-border bg-surface p-5 shadow-card">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                AI Recommendation
+              </div>
+              <div className="mt-1 text-lg font-semibold text-foreground">{record.certification}</div>
+              <p className="mt-1 text-xs text-muted-foreground">{record.certificationReason}</p>
+            </div>
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Trainer Decision
+              </label>
+              <select
+                value={trainerDecision}
+                onChange={(e) => setTrainerDecision(e.target.value as TrainerDecision)}
+                className="mt-1 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
+              >
+                <option>Accept AI Recommendation</option>
+                <option>Override to Conditional Pass</option>
+                <option>Override to Needs More Practice</option>
+                <option>Override to Not Certified</option>
+              </select>
+              <div className="mt-2 text-xs text-muted-foreground">
+                Final outcome:{" "}
+                <span className="font-semibold text-foreground">{finalOutcome}</span>
               </div>
             </div>
-            <Link
-              to="/"
-              className="mt-4 block w-full rounded-md bg-primary px-4 py-2 text-center text-sm font-medium text-primary-foreground hover:opacity-90"
+          </div>
+          <div className="mt-4">
+            <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Trainer Notes
+            </label>
+            <textarea
+              value={trainerNotes}
+              onChange={(e) => setTrainerNotes(e.target.value)}
+              rows={3}
+              placeholder="Coaching notes, context, or rationale for the decision…"
+              className="mt-1 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
+            />
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              onClick={assignNext}
+              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
             >
-              Configure Next Roleplay
-            </Link>
+              Assign Next Roleplay
+            </button>
+            <span className="self-center text-xs text-muted-foreground">
+              The trainer remains the final decision-maker.
+            </span>
           </div>
         </div>
-      </div>
-
-      {/* Coaching bullets */}
-      <div className="mt-6 grid grid-cols-1 gap-5 lg:grid-cols-3">
-        <BulletCard title="Strengths Demonstrated" items={record.strengths} tone="success" />
-        <BulletCard title="Missed Expectations" items={record.missed} tone="warning" />
-        <BulletCard title="Suggested Improvement Actions" items={record.improvements} tone="teal" />
-      </div>
+      </Section>
     </AppShell>
   );
 }
 
-function readinessBlurb(r: ReadinessBand) {
-  switch (r) {
-    case "Production Ready":
-      return "85+ — cleared for live customer calls";
-    case "Needs Minor Coaching":
-      return "70–84 — one targeted practice recommended";
-    case "Needs More Practice":
-      return "50–69 — additional coaching required";
-    case "Not Ready":
-      return "Below 50 — return to component practice";
-  }
+/* ---------- Small presentational helpers ---------- */
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="mt-8">
+      <h2 className="mb-3 text-lg font-semibold text-foreground">{title}</h2>
+      {children}
+    </section>
+  );
 }
 
 function SummaryChip({ label, value }: { label: string; value: string }) {
@@ -214,7 +492,7 @@ function SummaryChip({ label, value }: { label: string; value: string }) {
       <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
         {label}
       </div>
-      <div className="mt-0.5 text-xs font-medium text-foreground">{value}</div>
+      <div className="mt-0.5 text-xs font-medium text-foreground">{value || "—"}</div>
     </div>
   );
 }
@@ -235,6 +513,81 @@ function ScoreBar({ value }: { value: number }) {
   );
 }
 
+function StatusPill({
+  label,
+  tone,
+}: {
+  label: string;
+  tone: "success" | "warning" | "destructive" | "teal" | "muted";
+}) {
+  const styles: Record<typeof tone, string> = {
+    success:
+      "bg-[color-mix(in_oklab,var(--success)_18%,transparent)] text-[color-mix(in_oklab,var(--success)_60%,black)]",
+    warning:
+      "bg-[color-mix(in_oklab,var(--warning)_25%,transparent)] text-[color-mix(in_oklab,var(--warning)_50%,black)]",
+    destructive:
+      "bg-[color-mix(in_oklab,var(--destructive)_18%,transparent)] text-destructive",
+    teal: "bg-teal-soft text-teal",
+    muted: "bg-secondary text-secondary-foreground",
+  };
+  return (
+    <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${styles[tone]}`}>
+      {label}
+    </span>
+  );
+}
+
+function StageStatusPill({ status }: { status: StageStatus }) {
+  const tone: "success" | "warning" | "destructive" | "muted" =
+    status === "Completed"
+      ? "success"
+      : status === "Partially Completed"
+        ? "warning"
+        : status === "Missed"
+          ? "destructive"
+          : "muted";
+  return <StatusPill label={status} tone={tone} />;
+}
+
+function ComplianceBadge({ status }: { status: ComplianceStatus }) {
+  const tone =
+    status === "Passed"
+      ? "success"
+      : status === "Warning"
+        ? "warning"
+        : status === "Failed"
+          ? "destructive"
+          : "muted";
+  return <StatusPill label={status} tone={tone as never} />;
+}
+
+function DetailBlock({
+  label,
+  value,
+  italic,
+  tone,
+}: {
+  label: string;
+  value: string;
+  italic?: boolean;
+  tone?: "teal";
+}) {
+  return (
+    <div className="rounded-lg bg-background p-3">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        {label}
+      </div>
+      <p
+        className={`mt-1 text-sm ${italic ? "italic text-muted-foreground" : "text-foreground"} ${
+          tone === "teal" ? "text-teal" : ""
+        }`}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
 function BulletCard({
   title,
   items,
@@ -245,11 +598,18 @@ function BulletCard({
   tone: "success" | "warning" | "teal";
 }) {
   const dot =
-    tone === "success" ? "bg-[var(--success)]" : tone === "warning" ? "bg-[var(--warning)]" : "bg-teal";
+    tone === "success"
+      ? "bg-[var(--success)]"
+      : tone === "warning"
+        ? "bg-[var(--warning)]"
+        : "bg-teal";
   return (
-    <div className="rounded-xl border border-border bg-surface p-6 shadow-card">
+    <div className="rounded-xl border border-border bg-surface p-5 shadow-card">
       <h3 className="text-sm font-semibold text-foreground">{title}</h3>
       <ul className="mt-3 space-y-2 text-sm text-foreground">
+        {items.length === 0 && (
+          <li className="text-xs text-muted-foreground">Nothing to report.</li>
+        )}
         {items.map((s, i) => (
           <li key={i} className="flex gap-2">
             <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} />
@@ -259,6 +619,41 @@ function BulletCard({
       </ul>
     </div>
   );
+}
+
+function PrescriptionItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-background p-3">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        {label}
+      </div>
+      <div className="mt-1 text-sm font-medium text-foreground">{value}</div>
+    </div>
+  );
+}
+
+function PerfCell({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        {label}
+      </div>
+      <div className="mt-1 text-sm font-semibold text-foreground">{value}</div>
+    </div>
+  );
+}
+
+function readinessBlurb(r: ReadinessBand) {
+  switch (r) {
+    case "Production Ready":
+      return "85+ — cleared for live customer calls";
+    case "Needs Minor Coaching":
+      return "70–84 — one targeted practice recommended";
+    case "Needs More Practice":
+      return "50–69 — additional coaching required";
+    case "Not Ready":
+      return "Below 50 — return to component practice";
+  }
 }
 
 function formatDuration(seconds: number) {
