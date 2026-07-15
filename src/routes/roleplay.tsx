@@ -1,6 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useConversation } from "@elevenlabs/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { scenarios, trainees, demoTranscript } from "@/lib/mock-data";
 
@@ -22,92 +21,100 @@ export const Route = createFileRoute("/roleplay")({
   component: LiveRoleplay,
 });
 
-type Line = { role: "agent" | "customer" | "system"; text: string; ts: number };
+type SessionState = "Ready" | "Connecting" | "Listening" | "Speaking" | "Completed";
+
+declare module "react" {
+  namespace JSX {
+    interface IntrinsicElements {
+      "elevenlabs-convai": React.DetailedHTMLProps<
+        React.HTMLAttributes<HTMLElement> & {
+          "agent-id"?: string;
+          variant?: string;
+        },
+        HTMLElement
+      >;
+    }
+  }
+}
 
 function LiveRoleplay() {
   const { trainee: traineeId, scenario: scenarioId } = Route.useSearch();
   const navigate = useNavigate();
 
-  const trainee = trainees.find((t) => t.id === traineeId) ?? trainees[0];
-  const scenario = scenarios.find((s) => s.id === scenarioId) ?? scenarios[0];
+  const trainee =
+    trainees.find((t) => t.id === traineeId) ?? trainees[0];
+  const scenario =
+    scenarios.find((s) => s.id === scenarioId) ??
+    scenarios.find((s) => s.id === "price-sensitive") ??
+    scenarios[0];
 
-  const [transcript, setTranscript] = useState<Line[]>([]);
+  const [sessionState, setSessionState] = useState<SessionState>("Ready");
   const [transcriptText, setTranscriptText] = useState("");
-  const [completed, setCompleted] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const startedRef = useRef(false);
+  const widgetRef = useRef<HTMLElement | null>(null);
 
-  const conversation = useConversation({
-    onConnect: () => setErrorMsg(null),
-    onDisconnect: () => {
-      if (startedRef.current) setCompleted(true);
-    },
-    onMessage: (message: { source?: string; message?: string }) => {
-      const role: Line["role"] =
-        message.source === "user" ? "customer" : message.source === "ai" ? "agent" : "system";
-      const text = message.message ?? "";
-      if (!text) return;
-      setTranscript((prev) => [...prev, { role, text, ts: Date.now() }]);
-    },
-    onError: (err: unknown) => {
-      const msg = err instanceof Error ? err.message : typeof err === "string" ? err : "Voice connection error";
-      setErrorMsg(msg);
-    },
-  });
-
-  // Keep the editable text area in sync with captured transcript
+  // Listen to widget lifecycle events for visual state + transcript capture
   useEffect(() => {
-    if (transcript.length === 0) return;
-    const formatted = transcript
-      .map((l) => {
-        const who = l.role === "agent" ? "Agent (Trainee)" : l.role === "customer" ? "Customer (Rachel)" : "System";
-        return `${who}: ${l.text}`;
-      })
-      .join("\n");
-    setTranscriptText(formatted);
-  }, [transcript]);
+    const el = widgetRef.current;
+    if (!el) return;
 
-  const status = conversation.status; // 'disconnected' | 'connecting' | 'connected'
-  const isSpeaking = conversation.isSpeaking;
+    const appendLine = (who: "AI Customer" | "Trainee", text: string) => {
+      if (!text) return;
+      setTranscriptText((prev) => (prev ? `${prev}\n${who}: ${text}` : `${who}: ${text}`));
+    };
 
-  const displayStatus = useMemo(() => {
-    if (completed && status !== "connected") return { label: "Completed", tone: "bg-secondary text-secondary-foreground" };
-    if (status === "connecting") return { label: "Connecting", tone: "bg-teal-soft text-teal" };
-    if (status === "connected" && isSpeaking) return { label: "Speaking", tone: "bg-[color-mix(in_oklab,var(--warning)_25%,transparent)] text-[color-mix(in_oklab,var(--warning)_50%,black)]" };
-    if (status === "connected") return { label: "Listening", tone: "bg-[color-mix(in_oklab,var(--success)_18%,transparent)] text-[color-mix(in_oklab,var(--success)_60%,black)]" };
-    return { label: "Ready", tone: "bg-secondary text-secondary-foreground" };
-  }, [status, isSpeaking, completed]);
+    const onCall = () => setSessionState("Connecting");
+    const onConnect = () => setSessionState("Listening");
+    const onDisconnect = () => setSessionState("Completed");
+    const onMessage = (e: Event) => {
+      const detail = (e as CustomEvent).detail as
+        | { source?: string; message?: string; text?: string }
+        | undefined;
+      if (!detail) return;
+      const text = detail.message ?? detail.text ?? "";
+      if (detail.source === "user") appendLine("Trainee", text);
+      else if (detail.source === "ai") appendLine("AI Customer", text);
+    };
+    const onModeChange = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { mode?: string } | undefined;
+      if (detail?.mode === "speaking") setSessionState("Speaking");
+      else if (detail?.mode === "listening") setSessionState("Listening");
+    };
+
+    el.addEventListener("elevenlabs-convai:call", onCall);
+    el.addEventListener("elevenlabs-convai:connect", onConnect);
+    el.addEventListener("elevenlabs-convai:disconnect", onDisconnect);
+    el.addEventListener("elevenlabs-convai:message", onMessage);
+    el.addEventListener("elevenlabs-convai:mode-change", onModeChange);
+
+    return () => {
+      el.removeEventListener("elevenlabs-convai:call", onCall);
+      el.removeEventListener("elevenlabs-convai:connect", onConnect);
+      el.removeEventListener("elevenlabs-convai:disconnect", onDisconnect);
+      el.removeEventListener("elevenlabs-convai:message", onMessage);
+      el.removeEventListener("elevenlabs-convai:mode-change", onModeChange);
+    };
+  }, []);
 
   const start = useCallback(async () => {
-    setErrorMsg(null);
-    setCompleted(false);
-    setTranscript([]);
-    setTranscriptText("");
+    setSessionState("Connecting");
     try {
       await navigator.mediaDevices.getUserMedia({ audio: true });
-      await conversation.startSession({
-        agentId: AGENT_ID,
-        connectionType: "webrtc",
-      });
-      startedRef.current = true;
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Could not start voice session";
-      setErrorMsg(msg + " — you can still paste a transcript manually below.");
-    }
-  }, [conversation]);
-
-  const end = useCallback(async () => {
-    try {
-      await conversation.endSession();
     } catch {
-      /* noop */
+      /* user can still use widget button */
     }
-    setCompleted(true);
-  }, [conversation]);
+    widgetRef.current?.dispatchEvent(
+      new CustomEvent("elevenlabs-convai:call", { detail: { config: {} } }),
+    );
+  }, []);
+
+  const end = useCallback(() => {
+    widgetRef.current?.dispatchEvent(new CustomEvent("elevenlabs-convai:end"));
+    setSessionState("Completed");
+  }, []);
 
   const useDemo = () => {
     setTranscriptText(demoTranscript);
-    setCompleted(true);
+    setSessionState("Completed");
   };
 
   const goEvaluate = () => {
@@ -119,53 +126,95 @@ function LiveRoleplay() {
     navigate({ to: "/evaluation" });
   };
 
+  const stateStyles: Record<SessionState, string> = {
+    Ready: "bg-secondary text-secondary-foreground",
+    Connecting: "bg-teal-soft text-teal",
+    Listening: "bg-[color-mix(in_oklab,var(--success)_18%,transparent)] text-[color-mix(in_oklab,var(--success)_60%,black)]",
+    Speaking: "bg-[color-mix(in_oklab,var(--warning)_25%,transparent)] text-[color-mix(in_oklab,var(--warning)_50%,black)]",
+    Completed: "bg-secondary text-secondary-foreground",
+  };
+
+  const focusSkills = [
+    "Discovery",
+    "Product recommendation",
+    "FBB pitch",
+    "Objection handling",
+    "Compliance",
+    "Closing",
+  ];
+
   return (
     <AppShell>
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight text-foreground">Live Roleplay</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Real-time voice conversation with the AI customer</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Real-time voice conversation with the AI customer
+          </p>
         </div>
-        <div className={`rounded-full px-3 py-1 text-xs font-semibold ${displayStatus.tone}`}>
-          {displayStatus.label}
+        <div className={`rounded-full px-3 py-1 text-xs font-semibold ${stateStyles[sessionState]}`}>
+          {sessionState}
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
-        {/* Left column: trainee + scenario */}
-        <div className="space-y-4 lg:col-span-3">
+        {/* LEFT — Session Information */}
+        <aside className="space-y-4 lg:col-span-3">
           <div className="rounded-xl border border-border bg-surface p-5 shadow-card">
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Trainee</div>
-            <div className="mt-2 text-lg font-semibold text-foreground">{trainee.name}</div>
-            <div className="text-xs text-muted-foreground">{trainee.batch}</div>
-            <div className="mt-3 flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Last score</span>
-              <span className="font-semibold text-foreground">{trainee.score}/100</span>
+            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Session Information
             </div>
+            <dl className="mt-4 space-y-3 text-sm">
+              <div>
+                <dt className="text-xs text-muted-foreground">Trainee</dt>
+                <dd className="font-semibold text-foreground">{trainee.name}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-foreground">Batch</dt>
+                <dd className="text-foreground">{trainee.batch}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-foreground">Project</dt>
+                <dd className="text-foreground">US Telecom Sales</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-foreground">Scenario</dt>
+                <dd className="text-foreground">Price-Sensitive Customer</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-foreground">Difficulty</dt>
+                <dd className="text-foreground">Medium</dd>
+              </div>
+            </dl>
           </div>
-          <div className="rounded-xl border border-border bg-surface p-5 shadow-card">
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Scenario</div>
-            <div className="mt-2 text-lg font-semibold text-foreground">{scenario.title}</div>
-            <div className="mt-1 text-xs text-muted-foreground">{scenario.difficulty} · {scenario.duration}</div>
-            <p className="mt-3 text-sm text-muted-foreground">{scenario.description}</p>
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              {scenario.focusSkills.map((sk) => (
-                <span key={sk} className="rounded-md bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">{sk}</span>
-              ))}
-            </div>
-          </div>
-        </div>
 
-        {/* Center: AI Customer card */}
-        <div className="lg:col-span-6">
-          <div className="rounded-2xl border border-border bg-gradient-to-br from-surface to-[color-mix(in_oklab,var(--teal-soft)_60%,var(--surface))] p-8 shadow-elevated">
+          <div className="rounded-xl border border-border bg-surface p-5 shadow-card">
+            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Training Focus
+            </div>
+            <ul className="mt-3 space-y-2 text-sm text-foreground">
+              {focusSkills.map((sk) => (
+                <li key={sk} className="flex items-center gap-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-teal" />
+                  {sk}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </aside>
+
+        {/* CENTER — AI Customer + ElevenLabs widget */}
+        <section className="lg:col-span-6">
+          <div className="rounded-2xl border border-border bg-gradient-to-br from-surface to-[color-mix(in_oklab,var(--teal-soft)_60%,var(--surface))] p-6 shadow-elevated">
             <div className="flex items-start gap-5">
               <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-primary text-2xl font-semibold text-primary-foreground shadow-elevated">
                 RM
               </div>
               <div className="flex-1">
                 <div className="text-xs font-medium uppercase tracking-wide text-teal">AI Customer</div>
-                <h2 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">Rachel Miller</h2>
+                <h2 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
+                  Rachel Miller
+                </h2>
                 <p className="mt-1 text-sm text-muted-foreground">
                   US home customer · price-sensitive · works from home · family of four
                 </p>
@@ -175,72 +224,69 @@ function LiveRoleplay() {
               </div>
             </div>
 
-            {/* Waveform */}
-            <div className="mt-8 flex h-16 items-center justify-center gap-1.5 rounded-xl border border-border bg-surface/60 px-6">
-              {Array.from({ length: 28 }).map((_, i) => (
-                <span
-                  key={i}
-                  className="waveform-bar"
-                  style={{
-                    animationDelay: `${i * 60}ms`,
-                    animationPlayState: status === "connected" ? "running" : "paused",
-                    height: status === "connected" ? undefined : "6px",
-                    opacity: status === "connected" ? undefined : 0.25,
+            {/* Animated waveform placeholder */}
+            <div className="mt-6 flex h-16 items-center justify-center gap-1.5 rounded-xl border border-border bg-surface/60 px-6">
+              {Array.from({ length: 28 }).map((_, i) => {
+                const active = sessionState === "Listening" || sessionState === "Speaking";
+                return (
+                  <span
+                    key={i}
+                    className="waveform-bar"
+                    style={{
+                      animationDelay: `${i * 60}ms`,
+                      animationPlayState: active ? "running" : "paused",
+                      height: active ? undefined : "6px",
+                      opacity: active ? undefined : 0.25,
+                    }}
+                  />
+                );
+              })}
+            </div>
+
+            {/* Embedded ElevenLabs widget (inline, not floating) */}
+            <div className="mt-6 rounded-xl border border-border bg-surface p-4">
+              <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                ElevenLabs Voice Agent
+              </div>
+              <div className="flex min-h-[280px] items-center justify-center">
+                <elevenlabs-convai
+                  ref={(el: HTMLElement | null) => {
+                    widgetRef.current = el;
                   }}
+                  agent-id={AGENT_ID}
+                  variant="expanded"
                 />
-              ))}
+              </div>
             </div>
 
             <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-              {status !== "connected" ? (
-                <button
-                  onClick={start}
-                  disabled={status === "connecting"}
-                  className="rounded-md bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-card hover:opacity-90 disabled:opacity-60"
-                >
-                  {status === "connecting" ? "Connecting…" : "Start Roleplay"}
-                </button>
-              ) : (
-                <button
-                  onClick={end}
-                  className="rounded-md bg-destructive px-5 py-2.5 text-sm font-semibold text-destructive-foreground shadow-card hover:opacity-90"
-                >
-                  End Roleplay
-                </button>
-              )}
               <button
-                onClick={useDemo}
-                className="rounded-md border border-border bg-surface px-4 py-2.5 text-sm font-medium text-foreground hover:bg-secondary"
+                onClick={start}
+                disabled={sessionState === "Connecting" || sessionState === "Listening" || sessionState === "Speaking"}
+                className="rounded-md bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-card hover:opacity-90 disabled:opacity-60"
               >
-                Use Demo Transcript
+                Start Roleplay
               </button>
               <button
-                onClick={goEvaluate}
-                disabled={!transcriptText.trim()}
-                className="rounded-md bg-teal px-5 py-2.5 text-sm font-semibold text-teal-foreground shadow-card hover:opacity-90 disabled:opacity-50"
+                onClick={end}
+                className="rounded-md bg-destructive px-5 py-2.5 text-sm font-semibold text-destructive-foreground shadow-card hover:opacity-90"
               >
-                Generate Evaluation
+                End Roleplay
               </button>
             </div>
-
-            {errorMsg && (
-              <div className="mt-4 rounded-md border border-destructive/30 bg-[color-mix(in_oklab,var(--destructive)_10%,transparent)] px-4 py-2 text-xs text-destructive">
-                {errorMsg}
-              </div>
-            )}
           </div>
-        </div>
+        </section>
 
-        {/* Right: Transcript */}
-        <div className="lg:col-span-3">
+        {/* RIGHT — Live Transcript */}
+        <aside className="lg:col-span-3">
           <div className="flex h-full flex-col rounded-xl border border-border bg-surface p-5 shadow-card">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-sm font-semibold text-foreground">Transcript</div>
-                <div className="text-xs text-muted-foreground">Auto-captured · editable</div>
+                <div className="text-sm font-semibold text-foreground">Live Transcript</div>
+                <div className="text-xs text-muted-foreground">Editable · POC</div>
               </div>
               <button
-                onClick={() => { setTranscript([]); setTranscriptText(""); }}
+                onClick={() => setTranscriptText("")}
                 className="text-xs text-muted-foreground hover:text-foreground"
               >
                 Clear
@@ -249,11 +295,26 @@ function LiveRoleplay() {
             <textarea
               value={transcriptText}
               onChange={(e) => setTranscriptText(e.target.value)}
-              placeholder="Transcript will appear here during the roleplay. You can also paste one manually."
-              className="mt-3 min-h-[420px] flex-1 resize-none rounded-md border border-input bg-background p-3 text-xs leading-relaxed text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              placeholder="Transcript will appear here during the roleplay. Speaker labels: AI Customer, Trainee."
+              className="mt-3 min-h-[380px] flex-1 resize-none overflow-auto rounded-md border border-input bg-background p-3 text-xs leading-relaxed text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             />
+            <div className="mt-3 flex flex-col gap-2">
+              <button
+                onClick={useDemo}
+                className="rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-foreground hover:bg-secondary"
+              >
+                Use Demo Transcript
+              </button>
+              <button
+                onClick={goEvaluate}
+                disabled={!transcriptText.trim()}
+                className="rounded-md bg-teal px-4 py-2 text-sm font-semibold text-teal-foreground shadow-card hover:opacity-90 disabled:opacity-50"
+              >
+                Generate Evaluation
+              </button>
+            </div>
           </div>
-        </div>
+        </aside>
       </div>
     </AppShell>
   );
