@@ -269,24 +269,6 @@ function AssignModal({
       scenario,
       difficulty,
     };
-    // Persist an "assigned" marker so it appears in history right away.
-    const record: EvaluationRecord = {
-      id: `assigned_${Date.now()}`,
-      date: new Date().toISOString(),
-      durationSeconds: 0,
-      session,
-      overallScore: 0,
-      categories: [],
-      readiness: "Not Ready",
-      certification: "Not Certified",
-      strengths: [],
-      missed: [],
-      improvements: [],
-      coachingSummary: "Assigned — awaiting roleplay.",
-      nextScenario: scenario,
-    };
-    // We don't want assigned-but-not-run rows to appear as attempts; skip saving.
-    void record;
     onAssign(session);
   };
 
