@@ -8,7 +8,6 @@ import {
   SCENARIOS,
   TRAINING_MODES,
   loadHistory,
-  saveEvaluation,
   saveSession,
   type EvaluationRecord,
   type ReadinessBand,
