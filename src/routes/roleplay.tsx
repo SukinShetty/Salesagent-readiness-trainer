@@ -19,8 +19,16 @@ export const Route = createFileRoute("/roleplay")({
       { name: "description", content: "Live AI voice roleplay with the KGIS AI Telecom Customer." },
     ],
   }),
-  component: LiveRoleplay,
+  component: LiveRoleplayPage,
 });
+
+function LiveRoleplayPage() {
+  return (
+    <ConversationProvider>
+      <LiveRoleplay />
+    </ConversationProvider>
+  );
+}
 
 type DisplayStatus =
   | "Ready"
