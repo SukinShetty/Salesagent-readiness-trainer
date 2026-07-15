@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ScenariosRouteImport } from './routes/scenarios'
 import { Route as RoleplayRouteImport } from './routes/roleplay'
+import { Route as EvaluationRouteImport } from './routes/evaluation'
 import { Route as IndexRouteImport } from './routes/index'
 
 const ScenariosRoute = ScenariosRouteImport.update({
@@ -23,6 +24,11 @@ const RoleplayRoute = RoleplayRouteImport.update({
   path: '/roleplay',
   getParentRoute: () => rootRouteImport,
 } as any)
+const EvaluationRoute = EvaluationRouteImport.update({
+  id: '/evaluation',
+  path: '/evaluation',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -31,30 +37,34 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/evaluation': typeof EvaluationRoute
   '/roleplay': typeof RoleplayRoute
   '/scenarios': typeof ScenariosRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/evaluation': typeof EvaluationRoute
   '/roleplay': typeof RoleplayRoute
   '/scenarios': typeof ScenariosRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/evaluation': typeof EvaluationRoute
   '/roleplay': typeof RoleplayRoute
   '/scenarios': typeof ScenariosRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/roleplay' | '/scenarios'
+  fullPaths: '/' | '/evaluation' | '/roleplay' | '/scenarios'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/roleplay' | '/scenarios'
-  id: '__root__' | '/' | '/roleplay' | '/scenarios'
+  to: '/' | '/evaluation' | '/roleplay' | '/scenarios'
+  id: '__root__' | '/' | '/evaluation' | '/roleplay' | '/scenarios'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  EvaluationRoute: typeof EvaluationRoute
   RoleplayRoute: typeof RoleplayRoute
   ScenariosRoute: typeof ScenariosRoute
 }
@@ -75,6 +85,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RoleplayRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/evaluation': {
+      id: '/evaluation'
+      path: '/evaluation'
+      fullPath: '/evaluation'
+      preLoaderRoute: typeof EvaluationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -87,6 +104,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  EvaluationRoute: EvaluationRoute,
   RoleplayRoute: RoleplayRoute,
   ScenariosRoute: ScenariosRoute,
 }
