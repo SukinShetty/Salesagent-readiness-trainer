@@ -296,12 +296,13 @@ function TrainerView() {
                 <th className="px-6 py-3 font-medium">Practice Hours</th>
                 <th className="px-6 py-3 font-medium">Latest Score</th>
                 <th className="px-6 py-3 font-medium">Production Readiness</th>
+                <th className="px-6 py-3 font-medium text-right">Action</th>
               </tr>
             </thead>
             <tbody>
               {activity.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-6 py-8 text-center text-sm text-muted-foreground">
+                  <td colSpan={9} className="px-6 py-8 text-center text-sm text-muted-foreground">
                     No trainee activity yet.
                   </td>
                 </tr>
@@ -320,6 +321,25 @@ function TrainerView() {
                   <td className="px-6 py-3 text-foreground">{t.latestScore}/100</td>
                   <td className="px-6 py-3">
                     <ReadinessBadge level={t.latestReadiness} />
+                  </td>
+                  <td className="px-6 py-3 text-right">
+                    {t.latestRecord ? (
+                      <button
+                        onClick={() => openReport(t.latestRecord!)}
+                        title="Open the trainee's most recent evaluation report"
+                        className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90"
+                      >
+                        View Latest Report
+                      </button>
+                    ) : (
+                      <button
+                        disabled
+                        title="No completed roleplay with a saved evaluation"
+                        className="cursor-not-allowed rounded-md border border-border bg-secondary px-3 py-1.5 text-xs font-medium text-muted-foreground"
+                      >
+                        No Report Available
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
