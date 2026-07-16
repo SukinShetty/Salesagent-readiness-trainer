@@ -459,6 +459,10 @@ function LiveRoleplay() {
         }).catch((e) => console.warn("[Session] finalize failed", e));
 
         const convId = conversationIdRef.current;
+        if (IS_DEV)
+          console.log(
+            `[Roleplay] End clicked. dbSessionId=${dbSessionId} conversationId=${convId ?? "(none)"}`,
+          );
         if (convId) {
           void retrieveAudio({
             data: { sessionId: dbSessionId, conversationId: convId },
