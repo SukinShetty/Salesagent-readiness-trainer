@@ -213,10 +213,8 @@ export function loadTranscript(): string {
   return window.sessionStorage.getItem(TRANSCRIPT_KEY) ?? "";
 }
 
-export type EvaluationMode =
-  | "Component Practice"
-  | "Full Call Flow Practice"
-  | "Assessment Mode";
+export type EvaluationMode = CoreModule;
+
 
 export type StageStatus =
   | "Completed"
