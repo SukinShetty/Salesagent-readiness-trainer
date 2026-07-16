@@ -167,17 +167,21 @@ export function getScenarioBrief(scenario: string): ScenarioBrief {
 }
 
 export type TrainingSession = {
-  salespersonName: string;
-  employeeId: string;
-  department: string;
+  salespersonName: string; // Trainee Name (UI label)
+  employeeId: string; // Trainee ID (UI label)
   batchName: string;
   project: string;
   provider: string;
-  telecomService: TelecomService;
-  trainingMode: string;
+  coreModule: CoreModule;
+  subOption: string;
   scenario: string;
   difficulty: string;
+  // Legacy optional fields (older stored sessions may include these)
+  trainingMode?: string;
+  department?: string;
+  telecomService?: string;
 };
+
 
 const SESSION_KEY = "kgis:session";
 const HISTORY_KEY = "kgis:history";
