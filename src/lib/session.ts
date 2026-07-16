@@ -348,12 +348,13 @@ export const CALL_FLOW_STAGES: { name: string; max: number }[] = [
   { name: "Customer Experience and Soft Skills", max: 5 },
 ];
 
-export function deriveMode(trainingMode: string): EvaluationMode {
-  for (const g of TRAINING_MODES) {
-    if (g.options.includes(trainingMode)) return g.group;
+export function deriveMode(coreModule: string | undefined): EvaluationMode {
+  if (coreModule && (CORE_MODULES as readonly string[]).includes(coreModule)) {
+    return coreModule as EvaluationMode;
   }
-  return "Full Call Flow Practice";
+  return "Full Call Flow Coaching Module";
 }
+
 
 type Match = { keys: string[]; evidence: string };
 function findLine(traineeLines: string[], keys: string[]): string {
