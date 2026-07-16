@@ -20,6 +20,7 @@ import {
 } from "@/lib/session";
 
 const AGENT_ID = "agent_6801kxj68508fhdb7p2hzrqbrerw";
+const IS_DEV = import.meta.env.DEV;
 
 export const Route = createFileRoute("/roleplay")({
   head: () => ({
@@ -38,6 +39,7 @@ type DisplayStatus =
   | "Ready"
   | "Connecting"
   | "Customer Listening"
+  | "Customer Thinking"
   | "Customer Speaking"
   | "Reconnecting"
   | "Roleplay Completed"
@@ -61,22 +63,91 @@ function getSafeErrorMessage(error: unknown): string {
   }
 }
 
+/**
+ * Module-level pub/sub for provider callbacks. The ConversationProvider is
+ * mounted once at the route level and its callback identities are stable;
+ * the inner component registers handlers here on mount.
+ */
+const voiceBus: {
+  onMessage: (m: unknown) => void;
+  onModeChange: (m: unknown) => void;
+} = { onMessage: () => {}, onModeChange: () => {} };
+
+/**
+ * Development-only latency tracker for turn-taking diagnostics.
+ * Logs the timings requested by L&D so trainers can tune the agent settings
+ * server-side. Nothing here is surfaced in the UI.
+ */
+const latency = {
+  userSpeechEnd: 0,
+  userTranscriptFinal: 0,
+  agentResponseStart: 0,
+  firstAudio: 0,
+  reset() {
+    this.userSpeechEnd = 0;
+    this.userTranscriptFinal = 0;
+    this.agentResponseStart = 0;
+    this.firstAudio = 0;
+  },
+  markUserSpeechEnd() {
+    if (!IS_DEV) return;
+    this.userSpeechEnd = performance.now();
+    console.log("[Latency] trainee stopped speaking");
+  },
+  markUserTranscriptFinal() {
+    if (!IS_DEV) return;
+    this.userTranscriptFinal = performance.now();
+    if (this.userSpeechEnd) {
+      console.log(
+        `[Latency] speech-end → transcript-final: ${Math.round(this.userTranscriptFinal - this.userSpeechEnd)}ms`,
+      );
+    }
+  },
+  markAgentResponseStart() {
+    if (!IS_DEV) return;
+    this.agentResponseStart = performance.now();
+    if (this.userTranscriptFinal) {
+      console.log(
+        `[Latency] transcript-final → agent-response: ${Math.round(this.agentResponseStart - this.userTranscriptFinal)}ms`,
+      );
+    }
+  },
+  markFirstAudio() {
+    if (!IS_DEV) return;
+    if (this.firstAudio) return; // only first chunk of the turn
+    this.firstAudio = performance.now();
+    if (this.agentResponseStart) {
+      console.log(
+        `[Latency] response-gen → first-audio: ${Math.round(this.firstAudio - this.agentResponseStart)}ms`,
+      );
+    }
+    if (this.userSpeechEnd) {
+      console.log(
+        `[Latency] total speech-end → first-audio: ${Math.round(this.firstAudio - this.userSpeechEnd)}ms`,
+      );
+    }
+  },
+  resetTurn() {
+    this.userSpeechEnd = 0;
+    this.userTranscriptFinal = 0;
+    this.agentResponseStart = 0;
+    this.firstAudio = 0;
+  },
+};
 
 function LiveRoleplayPage() {
-  // Provider is mounted for the full lifetime of the route. Callbacks are
-  // stable via the wrapping component's refs; we do NOT recreate the provider.
+  // Provider mounted once for the route's lifetime — callback identities
+  // are stable so the SDK never tears down mid-conversation.
   return (
     <ConversationProvider
       onConnect={() => console.log("[Voice] connected")}
       onDisconnect={(details) => console.log("[Voice] disconnected", details)}
       onError={(error) => console.warn("[Voice] error:", getSafeErrorMessage(error), error)}
       onMessage={(message) => {
-        // Simplified: log only. No nested property access, no assumptions.
-        console.log("[Voice] message", message);
+        voiceBus.onMessage(message);
       }}
       onStatusChange={(s) => console.log("[Voice] status", s)}
-      onModeChange={(m) => console.log("[Voice] mode", m)}
-      onDebug={(d) => console.debug("[Voice] debug", d)}
+      onModeChange={(m) => voiceBus.onModeChange(m)}
     >
       <LiveRoleplay />
     </ConversationProvider>
