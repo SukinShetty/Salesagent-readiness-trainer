@@ -174,6 +174,7 @@ function LiveRoleplay() {
   const [session, setSession] = useState<TrainingSession | null>(null);
   const [dbSessionId, setDbSessionId] = useState<string | null>(null);
   const [transcriptText, setTranscriptText] = useState("");
+  const [isDemoTranscript, setIsDemoTranscript] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [ended, setEnded] = useState(false);
   const [micDenied, setMicDenied] = useState(false);
