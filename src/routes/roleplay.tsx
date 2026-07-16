@@ -4,7 +4,7 @@ import { ConversationProvider, useConversation } from "@elevenlabs/react";
 import { AppShell } from "@/components/AppShell";
 import {
   DEMO_TRANSCRIPT,
-  deriveMode,
+  SUB_OPTIONS,
   evaluateTranscript,
   getScenarioBrief,
   loadSession,
@@ -12,6 +12,7 @@ import {
   saveTranscript,
   type TrainingSession,
 } from "@/lib/session";
+
 
 const AGENT_ID = "agent_6801kxj68508fhdb7p2hzrqbrerw";
 
