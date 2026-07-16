@@ -657,7 +657,7 @@ export function evaluateTranscript(
   const tooShort = turns < 6 || durationSeconds < 60;
   const noClose = !has(["shall we", "schedule", "proceed", "get you started"]);
   let assessmentValidity: AssessmentValidity;
-  if (mode === "Assessment Mode") {
+  if (mode === "Assessment Module") {
     if (tooShort) assessmentValidity = "Invalid Due to Incomplete Call";
     else assessmentValidity = "Valid for Certification";
   } else {
@@ -670,13 +670,13 @@ export function evaluateTranscript(
   const gateReasons: string[] = [];
   if (criticalFailed) gateReasons.push("critical compliance item failed");
   if (tooShort) gateReasons.push("call transcript too short to fully evaluate");
-  if (mode === "Assessment Mode" && noClose) gateReasons.push("no closing attempt in assessment mode");
+  if (mode === "Assessment Module" && noClose) gateReasons.push("no closing attempt in assessment mode");
   const missedDisclosure = compliance.find(
     (c) => c.item === "Contract or term disclosure" && c.status === "Failed",
   );
   if (missedDisclosure) gateReasons.push("mandatory disclosure was missed");
 
-  if (mode !== "Assessment Mode") {
+  if (mode !== "Assessment Module") {
     certification = "Practice Attempt Only";
     certificationReason = "Practice session — no certification decision recorded.";
   } else if (gateReasons.length > 0) {
@@ -688,7 +688,7 @@ export function evaluateTranscript(
   }
 
   const readiness =
-    mode === "Assessment Mode" && gateReasons.length > 0 && readinessFromScore(overall) === "Production Ready"
+    mode === "Assessment Module" && gateReasons.length > 0 && readinessFromScore(overall) === "Production Ready"
       ? "Needs More Practice"
       : readinessFromScore(overall);
 
