@@ -325,62 +325,7 @@ function LiveRoleplay() {
     };
   }, []);
 
-  const startWith = useCallback(
-    async (connectionType: "webrtc" | "websocket") => {
-      if (!session) return;
-      // Concise live-call prompt: only what the customer needs to act in
-      // character. Evaluation, QMF scoring and analytics run post-call.
-      const prompt = buildLivePrompt(session);
-      const firstMessage = buildFirstMessage(session);
-      latency.reset();
-      await controls.startSession({
-        agentId: AGENT_ID,
-        connectionType,
-        overrides: {
-          agent: {
-            prompt: { prompt },
-            firstMessage,
-          },
-        },
-      });
-      startedAtRef.current = Date.now();
-      setStartedAt(Date.now());
-    },
-    [controls, session],
-  );
-
-
-  // Detect early unexpected disconnects and fall back to WebSocket once.
-  useEffect(() => {
-    if (status !== "disconnected") return;
-    if (!hasStarted || ended) return;
-    if (fallbackTriedRef.current) {
-      setConnectFailed(true);
-      return;
-    }
-    const startedAt = startedAtRef.current;
-    const withinEarlyWindow = startedAt && Date.now() - startedAt < 10_000;
-    // Fallback if we never fully connected OR we dropped within 10s of start.
-    if (!connectedOnceRef.current || withinEarlyWindow) {
-      fallbackTriedRef.current = true;
-      setIsReconnecting(true);
-      (async () => {
-        try {
-          await startWith("websocket");
-        } catch (e) {
-          console.warn("[Voice] websocket fallback failed:", getSafeErrorMessage(e));
-          setConnectFailed(true);
-          setIsReconnecting(false);
-          setHasStarted(false);
-        }
-      })();
-    } else {
-      setEnded(true);
-    }
-  }, [status, hasStarted, ended, startWith]);
-
   const displayStatus: DisplayStatus = useMemo(() => {
-    if (isReconnecting) return "Reconnecting";
     if (connectFailed) return "Connection Failed";
     if (!hasStarted) return "Ready";
     if (status === "connecting") return "Connecting";
@@ -391,49 +336,60 @@ function LiveRoleplay() {
     }
     if (ended || status === "disconnected") return "Roleplay Completed";
     return "Ready";
-  }, [isReconnecting, connectFailed, hasStarted, status, isSpeaking, isThinking, ended]);
+  }, [connectFailed, hasStarted, status, isSpeaking, isThinking, ended]);
 
+  // Detect unexpected disconnects (SDK went to disconnected without user click).
+  useEffect(() => {
+    if (status !== "disconnected") return;
+    if (!hasStarted || ended) return;
+    if (userEndedSessionRef.current) return;
+    activeSessionRef.current = false;
+    setConnectFailed(true);
+  }, [status, hasStarted, ended]);
 
   const start = useCallback(async () => {
-    if (!session || startingRef.current) return;
+    if (!session) return;
+    // Hard guards — never allow overlapping session attempts.
+    if (sessionStartingRef.current) return;
+    if (activeSessionRef.current) return;
+    if (sessionEndingRef.current) return;
     if (status === "connected" || status === "connecting") return;
-    startingRef.current = true;
+
+    sessionStartingRef.current = true;
+    userEndedSessionRef.current = false;
     setConnectFailed(false);
     setMicDenied(false);
     setEnded(false);
-    connectedOnceRef.current = false;
-    fallbackTriedRef.current = false;
-
-    // Preflight
-    if (typeof window === "undefined" || !window.isSecureContext) {
-      console.warn("[Voice] page is not running over HTTPS; WebRTC may be blocked");
-    }
-    if (typeof RTCPeerConnection === "undefined") {
-      // WebRTC unavailable — go straight to WebSocket.
-      fallbackTriedRef.current = true;
-    }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // Release the preflight stream; the SDK will open its own.
-      stream.getTracks().forEach((t) => t.stop());
-    } catch {
-      setMicDenied(true);
-      startingRef.current = false;
-      return;
-    }
+      try {
+        await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch {
+        setMicDenied(true);
+        return;
+      }
 
-    setHasStarted(true);
-    try {
-      await startWith(fallbackTriedRef.current ? "websocket" : "webrtc");
-    } catch (e) {
-      console.warn("[Voice] startSession failed:", getSafeErrorMessage(e));
-      setConnectFailed(true);
-      setHasStarted(false);
+      setHasStarted(true);
+      latency.reset();
+      try {
+        // Minimal stability config: single transport (SDK default), no overrides,
+        // no dynamic variables, no client tools. Once stable, richer config can
+        // be re-introduced carefully.
+        await controls.startSession({ agentId: AGENT_ID });
+        activeSessionRef.current = true;
+        startedAtRef.current = Date.now();
+        setStartedAt(Date.now());
+      } catch (e) {
+        console.warn("[Voice] startSession failed:", getSafeErrorMessage(e));
+        setConnectFailed(true);
+        setHasStarted(false);
+      }
     } finally {
-      startingRef.current = false;
+      sessionStartingRef.current = false;
     }
-  }, [session, status, startWith]);
+  }, [session, status, controls]);
+
+
 
   // Capture the provider conversation ID once we're connected and persist it
   // against the DB row. Never rendered in the UI.
