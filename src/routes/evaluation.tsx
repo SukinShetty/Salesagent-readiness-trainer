@@ -93,6 +93,14 @@ function EvaluationPage() {
     );
   }, [record, audioStatus]);
 
+  // Assessment Mode + audio-detected critical behaviour blocks Production Ready.
+  const voiceBlocksCertification = useMemo(() => {
+    if (!record || !voiceEval?.available) return false;
+    if (record.mode !== "Assessment Module") return false;
+    return voiceEval.flags.length > 0;
+  }, [record, voiceEval]);
+
+
   const finalOutcome = useMemo<CertificationOutcome | null>(() => {
     if (!record) return null;
     switch (trainerDecision) {
