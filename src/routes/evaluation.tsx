@@ -145,22 +145,29 @@ function EvaluationPage() {
   const s = record.session;
   const criticalFailed = record.criticalComplianceStatus === "Failed";
 
-  const download = () => {
-    const payload = {
-      ...record,
-      trainerReview: {
-        decision: trainerDecision,
-        notes: trainerNotes,
-        finalOutcome,
-      },
-    };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `kgis-evaluation-${s.employeeId}-${record.id}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const download = async () => {
+    if (downloadState === "preparing") return;
+    setDownloadState("preparing");
+    try {
+      const doc = generateEvaluationPdf({
+        record,
+        voiceEval,
+        audioAvailable: audioStatus === "ready",
+        trainerReview: {
+          aiRecommendation: record.certification,
+          decision: trainerDecision,
+          notes: trainerNotes,
+          finalOutcome: finalOutcome ?? record.certification,
+          reviewDate: trainerNotes ? new Date().toLocaleDateString() : undefined,
+        },
+        includeTranscript,
+      });
+      doc.save(buildFilename(record));
+      setDownloadState("idle");
+    } catch {
+      setDownloadState("error");
+      window.setTimeout(() => setDownloadState("idle"), 4000);
+    }
   };
 
   const assignNext = () => {
