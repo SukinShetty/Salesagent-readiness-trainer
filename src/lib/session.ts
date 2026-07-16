@@ -449,10 +449,11 @@ export function evaluateTranscript(
   transcript: string,
   session: TrainingSession,
   durationSeconds: number,
+  options: { isDemo?: boolean } = {},
 ): EvaluationRecord {
-  const text = transcript.toLowerCase();
+  const text = (transcript ?? "").toLowerCase();
   const has = (words: string[]) => words.some((w) => text.includes(w.toLowerCase()));
-  const lines = transcript
+  const lines = (transcript ?? "")
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter(Boolean);
@@ -463,6 +464,45 @@ export function evaluateTranscript(
   const mode = deriveMode(session.coreModule);
   const componentFocus =
     mode === "Component-Based Coaching Module" ? session.subOption : null;
+
+  // ---- Insufficient-evidence guard (Rule 7) ----
+  // With no meaningful trainee content in the current transcript we do NOT
+  // fabricate scores, categories, evidence or a certification decision.
+  const traineeWordCount = traineeLines.join(" ").split(/\s+/).filter(Boolean).length;
+  if (traineeLines.length < 2 || traineeWordCount < 20) {
+    return {
+      id: `eval_${Date.now()}`,
+      date: new Date().toISOString(),
+      durationSeconds,
+      session,
+      overallScore: 0,
+      categories: [],
+      readiness: "Not Ready",
+      certification: "Practice Attempt Only",
+      strengths: [],
+      missed: [],
+      improvements: [],
+      coachingSummary:
+        "Evaluation unavailable because the roleplay transcript does not contain enough evidence.",
+      nextScenario: session.scenario,
+      turns,
+      transcript,
+      mode,
+      callFlowAdherencePct: 0,
+      criticalComplianceStatus: "Passed",
+      assessmentValidity: "Invalid Due to Insufficient Evidence",
+      callFlow: [],
+      categoryDetails: [],
+      compliance: [],
+      evidence: [],
+      priorityActions: [],
+      certificationReason:
+        "No certification decision — transcript did not contain enough trainee evidence.",
+      isDemo: options.isDemo,
+      insufficientEvidence: true,
+    };
+  }
+
 
 
   // ---- Category scoring with detail ----
