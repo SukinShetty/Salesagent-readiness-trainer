@@ -211,13 +211,13 @@ function LiveRoleplay() {
     return () => window.clearInterval(id);
   }, [startedAt, ended]);
 
-  // Track connected status for fallback detection
+  // Mark session as active as soon as the SDK reports connected.
   useEffect(() => {
     if (status === "connected") {
-      connectedOnceRef.current = true;
-      setIsReconnecting(false);
+      activeSessionRef.current = true;
     }
   }, [status]);
+
 
   // Wire the module-level provider bus into this component so we can react
   // to transcript / audio events without recreating the provider each render.
