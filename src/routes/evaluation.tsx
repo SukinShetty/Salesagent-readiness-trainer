@@ -18,6 +18,7 @@ import {
   ratingToneClass,
   type VoiceEvaluation,
 } from "@/lib/voice-evaluation";
+import { buildFilename, generateEvaluationPdf } from "@/lib/evaluation-pdf";
 
 export const Route = createFileRoute("/evaluation")({
   head: () => ({
@@ -49,6 +50,8 @@ function EvaluationPage() {
   const [audioStatus, setAudioStatus] = useState<"pending" | "ready" | "failed" | "missing">(
     "pending",
   );
+  const [includeTranscript, setIncludeTranscript] = useState(false);
+  const [downloadState, setDownloadState] = useState<"idle" | "preparing" | "error">("idle");
   const navigate = useNavigate();
   const fetchSession = useServerFn(getRoleplaySession);
 
@@ -142,22 +145,29 @@ function EvaluationPage() {
   const s = record.session;
   const criticalFailed = record.criticalComplianceStatus === "Failed";
 
-  const download = () => {
-    const payload = {
-      ...record,
-      trainerReview: {
-        decision: trainerDecision,
-        notes: trainerNotes,
-        finalOutcome,
-      },
-    };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `kgis-evaluation-${s.employeeId}-${record.id}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const download = async () => {
+    if (downloadState === "preparing") return;
+    setDownloadState("preparing");
+    try {
+      const doc = generateEvaluationPdf({
+        record,
+        voiceEval,
+        audioAvailable: audioStatus === "ready",
+        trainerReview: {
+          aiRecommendation: record.certification,
+          decision: trainerDecision,
+          notes: trainerNotes,
+          finalOutcome: finalOutcome ?? record.certification,
+          reviewDate: trainerNotes ? new Date().toLocaleDateString() : undefined,
+        },
+        includeTranscript,
+      });
+      doc.save(buildFilename(record));
+      setDownloadState("idle");
+    } catch {
+      setDownloadState("error");
+      window.setTimeout(() => setDownloadState("idle"), 4000);
+    }
   };
 
   const assignNext = () => {
@@ -191,11 +201,25 @@ function EvaluationPage() {
           >
             Return to Trainer View
           </Link>
+          <label className="flex items-center gap-2 rounded-md border border-border bg-surface px-3 py-2 text-xs font-medium text-foreground">
+            <input
+              type="checkbox"
+              checked={includeTranscript}
+              onChange={(e) => setIncludeTranscript(e.target.checked)}
+              className="h-3.5 w-3.5"
+            />
+            Include Full Transcript
+          </label>
           <button
             onClick={download}
-            className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+            disabled={downloadState === "preparing"}
+            className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60"
           >
-            Download Report
+            {downloadState === "preparing"
+              ? "Preparing professional report…"
+              : downloadState === "error"
+                ? "Unable to generate the PDF report. Please try again."
+                : "Download PDF Report"}
           </button>
         </div>
       </div>
