@@ -499,6 +499,7 @@ function LiveRoleplay() {
 
   const useDemo = () => {
     setTranscriptText(DEMO_TRANSCRIPT);
+    setIsDemoTranscript(true);
     setEnded(true);
   };
 
