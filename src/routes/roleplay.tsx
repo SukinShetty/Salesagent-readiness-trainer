@@ -471,6 +471,7 @@ function LiveRoleplay() {
       "bg-[color-mix(in_oklab,var(--success)_18%,transparent)] text-[color-mix(in_oklab,var(--success)_60%,black)]",
     "Customer Speaking":
       "bg-[color-mix(in_oklab,var(--warning)_25%,transparent)] text-[color-mix(in_oklab,var(--warning)_50%,black)]",
+    "Customer Thinking": "bg-teal-soft text-teal",
     "Roleplay Completed": "bg-secondary text-secondary-foreground",
     "Connection Failed":
       "bg-[color-mix(in_oklab,var(--destructive)_20%,transparent)] text-destructive",
