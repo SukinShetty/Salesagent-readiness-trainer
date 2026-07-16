@@ -116,10 +116,13 @@ function TrainerView() {
         practiceHours: number;
         latestReadiness: ReadinessBand;
         latestScore: number;
+        latestRecord: EvaluationRecord | null;
+        latestDate: number;
       }
     >();
     for (const r of history) {
       const s = r.session;
+      const ts = new Date(r.date).getTime() || 0;
       const entry = byTrainee.get(s.employeeId) ?? {
         name: s.salespersonName,
         id: s.employeeId,
@@ -130,19 +133,40 @@ function TrainerView() {
         practiceHours: 0,
         latestReadiness: r.readiness,
         latestScore: r.overallScore,
+        latestRecord: null as EvaluationRecord | null,
+        latestDate: -Infinity,
       };
       entry.attempts += 1;
       entry.callsInitiated += 1;
       entry.completed += (r.turns ?? 0) > 0 ? 1 : 1;
       entry.practiceHours += (r.durationSeconds ?? 0) / 3600;
-      entry.latestReadiness = r.readiness;
-      entry.latestScore = r.overallScore;
+      if (ts >= entry.latestDate) {
+        entry.latestDate = ts;
+        entry.latestReadiness = r.readiness;
+        entry.latestScore = r.overallScore;
+        entry.latestRecord = r;
+      }
       byTrainee.set(s.employeeId, entry);
     }
     return Array.from(byTrainee.values());
   }, [history]);
 
+  const persistViewState = () => {
+    if (typeof window === "undefined") return;
+    const state: TrainerViewState = {
+      query,
+      fProject,
+      fProvider,
+      fModule,
+      fScenario,
+      fReadiness,
+      scrollY: window.scrollY,
+    };
+    window.sessionStorage.setItem(TRAINER_VIEW_STATE_KEY, JSON.stringify(state));
+  };
+
   const openReport = (r: EvaluationRecord) => {
+    persistViewState();
     if (typeof window !== "undefined") {
       window.sessionStorage.setItem("kgis:lastEvaluation", JSON.stringify(r));
     }
