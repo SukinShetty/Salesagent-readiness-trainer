@@ -146,6 +146,30 @@ function EvaluationPage() {
 
   const s = record.session;
   const criticalFailed = record.criticalComplianceStatus === "Failed";
+  const activeTranscript = record.transcript ?? "";
+
+  /**
+   * Render a quote only when it can be traced verbatim to a trainee line in
+   * the current session transcript. Otherwise fall back to plain
+   * "No supporting trainee evidence found in the transcript." text without
+   * quotation marks so evaluator wording is never mistaken for a real quote.
+   */
+  const renderQuote = (quote: string | undefined | null) => {
+    const trimmed = (quote ?? "").trim();
+    if (!trimmed || trimmed === NO_TRAINEE_EVIDENCE) {
+      return { text: NO_TRAINEE_EVIDENCE, isQuote: false };
+    }
+    if (verifyTraineeQuote(activeTranscript, trimmed)) {
+      return { text: trimmed, isQuote: true };
+    }
+    if (import.meta.env.DEV) {
+      // Dev-only audit trail — never surfaced to the client.
+      console.warn("[EvidenceAudit] Quote not found in transcript, dropping:", trimmed);
+    }
+    return { text: NO_TRAINEE_EVIDENCE, isQuote: false };
+  };
+
+
 
   const download = async () => {
     if (downloadState === "preparing") return;
