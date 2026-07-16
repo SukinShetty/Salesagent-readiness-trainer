@@ -37,21 +37,50 @@ const READINESS: ReadinessBand[] = [
   "Not Ready",
 ];
 
+const TRAINER_VIEW_STATE_KEY = "kgis:trainerViewState";
+
+type TrainerViewState = {
+  query: string;
+  fProject: string;
+  fProvider: string;
+  fModule: string;
+  fScenario: string;
+  fReadiness: string;
+  scrollY: number;
+};
+
+function readSavedTrainerState(): Partial<TrainerViewState> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.sessionStorage.getItem(TRAINER_VIEW_STATE_KEY);
+    return raw ? (JSON.parse(raw) as Partial<TrainerViewState>) : {};
+  } catch {
+    return {};
+  }
+}
+
 function TrainerView() {
   const navigate = useNavigate();
   const [history, setHistory] = useState<EvaluationRecord[]>([]);
-  const [query, setQuery] = useState("");
-  const [fProject, setFProject] = useState("All");
-  const [fProvider, setFProvider] = useState("All");
-  const [fModule, setFModule] = useState("All");
-  const [fScenario, setFScenario] = useState("All");
-  const [fReadiness, setFReadiness] = useState("All");
+  const saved = typeof window !== "undefined" ? readSavedTrainerState() : {};
+  const [query, setQuery] = useState(saved.query ?? "");
+  const [fProject, setFProject] = useState(saved.fProject ?? "All");
+  const [fProvider, setFProvider] = useState(saved.fProvider ?? "All");
+  const [fModule, setFModule] = useState(saved.fModule ?? "All");
+  const [fScenario, setFScenario] = useState(saved.fScenario ?? "All");
+  const [fReadiness, setFReadiness] = useState(saved.fReadiness ?? "All");
   const [assignOpen, setAssignOpen] = useState(false);
   const [assignMode, setAssignMode] = useState<"individual" | "batch" | "custom">(
     "individual",
   );
 
-  useEffect(() => setHistory(loadHistory()), []);
+  useEffect(() => {
+    setHistory(loadHistory());
+    const s = readSavedTrainerState();
+    if (typeof window !== "undefined" && typeof s.scrollY === "number") {
+      requestAnimationFrame(() => window.scrollTo(0, s.scrollY ?? 0));
+    }
+  }, []);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -87,10 +116,13 @@ function TrainerView() {
         practiceHours: number;
         latestReadiness: ReadinessBand;
         latestScore: number;
+        latestRecord: EvaluationRecord | null;
+        latestDate: number;
       }
     >();
     for (const r of history) {
       const s = r.session;
+      const ts = new Date(r.date).getTime() || 0;
       const entry = byTrainee.get(s.employeeId) ?? {
         name: s.salespersonName,
         id: s.employeeId,
@@ -101,19 +133,40 @@ function TrainerView() {
         practiceHours: 0,
         latestReadiness: r.readiness,
         latestScore: r.overallScore,
+        latestRecord: null as EvaluationRecord | null,
+        latestDate: -Infinity,
       };
       entry.attempts += 1;
       entry.callsInitiated += 1;
       entry.completed += (r.turns ?? 0) > 0 ? 1 : 1;
       entry.practiceHours += (r.durationSeconds ?? 0) / 3600;
-      entry.latestReadiness = r.readiness;
-      entry.latestScore = r.overallScore;
+      if (ts >= entry.latestDate) {
+        entry.latestDate = ts;
+        entry.latestReadiness = r.readiness;
+        entry.latestScore = r.overallScore;
+        entry.latestRecord = r;
+      }
       byTrainee.set(s.employeeId, entry);
     }
     return Array.from(byTrainee.values());
   }, [history]);
 
+  const persistViewState = () => {
+    if (typeof window === "undefined") return;
+    const state: TrainerViewState = {
+      query,
+      fProject,
+      fProvider,
+      fModule,
+      fScenario,
+      fReadiness,
+      scrollY: window.scrollY,
+    };
+    window.sessionStorage.setItem(TRAINER_VIEW_STATE_KEY, JSON.stringify(state));
+  };
+
   const openReport = (r: EvaluationRecord) => {
+    persistViewState();
     if (typeof window !== "undefined") {
       window.sessionStorage.setItem("kgis:lastEvaluation", JSON.stringify(r));
     }
@@ -243,12 +296,13 @@ function TrainerView() {
                 <th className="px-6 py-3 font-medium">Practice Hours</th>
                 <th className="px-6 py-3 font-medium">Latest Score</th>
                 <th className="px-6 py-3 font-medium">Production Readiness</th>
+                <th className="px-6 py-3 font-medium text-right">Action</th>
               </tr>
             </thead>
             <tbody>
               {activity.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-6 py-8 text-center text-sm text-muted-foreground">
+                  <td colSpan={9} className="px-6 py-8 text-center text-sm text-muted-foreground">
                     No trainee activity yet.
                   </td>
                 </tr>
@@ -267,6 +321,25 @@ function TrainerView() {
                   <td className="px-6 py-3 text-foreground">{t.latestScore}/100</td>
                   <td className="px-6 py-3">
                     <ReadinessBadge level={t.latestReadiness} />
+                  </td>
+                  <td className="px-6 py-3 text-right">
+                    {t.latestRecord ? (
+                      <button
+                        onClick={() => openReport(t.latestRecord!)}
+                        title="Open the trainee's most recent evaluation report"
+                        className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90"
+                      >
+                        View Latest Report
+                      </button>
+                    ) : (
+                      <button
+                        disabled
+                        title="No completed roleplay with a saved evaluation"
+                        className="cursor-not-allowed rounded-md border border-border bg-secondary px-3 py-1.5 text-xs font-medium text-muted-foreground"
+                      >
+                        No Report Available
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
