@@ -245,6 +245,7 @@ function LiveRoleplay() {
             type?: string;
             source?: string;
             message?: string;
+            text?: string;
             user_transcription_event?: { user_transcript?: string };
             agent_response_event?: { agent_response?: string };
             agent_response_correction_event?: { corrected_agent_response?: string };
@@ -252,18 +253,24 @@ function LiveRoleplay() {
         | null
         | undefined;
       if (!m) return;
-      const type = m.type ?? m.source;
+      if (IS_DEV) console.log("[Voice] message", m);
 
-      switch (type) {
+      // The ElevenLabs React SDK's onMessage emits finalized transcripts as
+      // `{ source: "user" | "ai", message: "..." }`. Lower-level event names
+      // (`user_transcript`, `agent_response`, ...) are handled too as a
+      // defensive fallback in case the SDK shape changes.
+      const kind = m.type ?? m.source;
+
+      switch (kind) {
+        case "user":
         case "user_transcript": {
           latency.markUserTranscriptFinal();
           const text =
             m.user_transcription_event?.user_transcript ??
-            (m as { text?: string }).text ??
             m.message ??
+            m.text ??
             "";
           appendTranscript("Trainee", String(text));
-          // Trigger delayed "thinking" indicator if the agent takes >1.5s
           if (thinkingTimerRef.current !== null) {
             window.clearTimeout(thinkingTimerRef.current);
           }
@@ -272,14 +279,17 @@ function LiveRoleplay() {
           }, 1500);
           break;
         }
+        case "ai":
+        case "agent":
         case "agent_response": {
           latency.markAgentResponseStart();
           const text =
             m.agent_response_event?.agent_response ??
-            (m as { text?: string }).text ??
             m.message ??
+            m.text ??
             "";
           appendTranscript("AI Customer", String(text));
+          clearThinking();
           break;
         }
         case "agent_response_correction": {
