@@ -88,6 +88,9 @@ function StartTraining() {
     }
     setError(null);
     setSubmitting(true);
+    // Session isolation — clear any transcript / evaluation / db id from the
+    // previous roleplay so the new session cannot inherit stale evidence.
+    clearSessionEvaluationData();
     try {
       const result = await createSession({
         data: {
