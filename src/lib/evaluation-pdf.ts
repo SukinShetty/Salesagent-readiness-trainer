@@ -4,7 +4,7 @@
 
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import type { EvaluationRecord } from "@/lib/session";
+import { NO_TRAINEE_EVIDENCE, verifyTraineeQuote, type EvaluationRecord } from "@/lib/session";
 import type { VoiceEvaluation } from "@/lib/voice-evaluation";
 
 const NAVY: [number, number, number] = [15, 34, 74];
@@ -36,7 +36,18 @@ export type PdfBuildInput = {
 };
 
 const NA = "Not Available";
-const NOEV = "No Evidence Found";
+const NOEV = NO_TRAINEE_EVIDENCE;
+
+/**
+ * Only render a quote when it appears verbatim in the trainee lines of the
+ * session transcript. Otherwise return NO_TRAINEE_EVIDENCE plain text so the
+ * PDF never contains fabricated or cross-session evidence.
+ */
+function verifiedQuote(transcript: string | undefined, quote: string | undefined | null): string {
+  const q = (quote ?? "").trim();
+  if (!q || q === NO_TRAINEE_EVIDENCE) return NO_TRAINEE_EVIDENCE;
+  return verifyTraineeQuote(transcript, q) ? q : NO_TRAINEE_EVIDENCE;
+}
 const PENDING = "Pending Trainer Review";
 
 function fallback(v: unknown, alt = NA): string {
@@ -127,6 +138,49 @@ export function generateEvaluationPdf(input: PdfBuildInput): jsPDF {
 
   drawFirstPageHeader();
   y = 100;
+
+  // Demo Mode / Insufficient-evidence banners
+  if (input.record.isDemo) {
+    ensureSpace(38);
+    doc.setFillColor(255, 244, 214);
+    doc.setDrawColor(...AMBER);
+    doc.roundedRect(MARGIN_X, y, contentWidth, 32, 4, 4, "FD");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(...AMBER);
+    doc.text("DEMO MODE — illustrative sample transcript.", MARGIN_X + 10, y + 14);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.text(
+      "Not for real trainee coaching or certification decisions.",
+      MARGIN_X + 10,
+      y + 26,
+    );
+    y += 42;
+  }
+  if (input.record.insufficientEvidence) {
+    ensureSpace(42);
+    doc.setFillColor(253, 235, 236);
+    doc.setDrawColor(...RED);
+    doc.roundedRect(MARGIN_X, y, contentWidth, 36, 4, 4, "FD");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(...RED);
+    doc.text(
+      "Evaluation unavailable — transcript did not contain enough evidence.",
+      MARGIN_X + 10,
+      y + 14,
+    );
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.text(
+      "Assessment Validity: Invalid Due to Insufficient Evidence. No scores or certification decision were generated.",
+      MARGIN_X + 10,
+      y + 28,
+    );
+    y += 46;
+  }
+
 
   // Trainee details block
   const s = input.record.session;
@@ -253,7 +307,7 @@ export function generateEvaluationPdf(input: PdfBuildInput): jsPDF {
     st.stage,
     st.status,
     st.status === "Not Applicable" ? "—" : `${st.score}/${st.max}`,
-    fallback(st.evidence, NOEV),
+    verifiedQuote(r.transcript, st.evidence),
     fallback(st.missed, "—"),
   ]);
   autoTable(doc, {
@@ -449,7 +503,8 @@ export function generateEvaluationPdf(input: PdfBuildInput): jsPDF {
   ];
   const evRows = evidenceLabels.map((label) => {
     const found = evidence.find((e) => e.label.toLowerCase().includes(label.split(" ")[1]?.toLowerCase() ?? ""));
-    return [label, found ? `“${found.quote}”` : NOEV];
+    const verified = verifiedQuote(r.transcript, found?.quote);
+    return [label, verified === NO_TRAINEE_EVIDENCE ? verified : `“${verified}”`];
   });
   autoTable(doc, {
     startY: y,

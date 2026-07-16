@@ -283,7 +283,8 @@ export type CriticalComplianceStatus = "Passed" | "Passed with Warning" | "Faile
 export type AssessmentValidity =
   | "Valid for Certification"
   | "Practice Attempt Only"
-  | "Invalid Due to Incomplete Call";
+  | "Invalid Due to Incomplete Call"
+  | "Invalid Due to Insufficient Evidence";
 
 export type EvaluationRecord = {
   id: string;
@@ -317,7 +318,58 @@ export type EvaluationRecord = {
   strongestStage?: string;
   weakestStage?: string;
   dbSessionId?: string; // Server-side row id for audio + persisted transcript
+  isDemo?: boolean;
+  insufficientEvidence?: boolean;
 };
+
+/** Fallback text for any evidence field with no verifiable trainee quote. */
+export const NO_TRAINEE_EVIDENCE =
+  "No supporting trainee evidence found in the transcript.";
+
+/** Normalize a string for tolerant substring comparison. */
+export function normalizeForMatch(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[\u2018\u2019\u201C\u201D]/g, '"')
+    .replace(/[.,;:!?\-\u2014"]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function extractTraineeLines(transcript: string): string[] {
+  if (!transcript) return [];
+  return transcript
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .filter((l) => /^trainee\s*:/i.test(l))
+    .map((l) => l.replace(/^trainee\s*:\s*/i, ""));
+}
+
+/**
+ * Confirm the quoted text originated from the trainee in the current
+ * transcript. Used to gate any UI/PDF field that renders a quote so that
+ * we never present fabricated or cross-session evidence to a trainer.
+ */
+export function verifyTraineeQuote(
+  transcript: string | undefined,
+  quote: string | undefined | null,
+): boolean {
+  if (!quote || !transcript) return false;
+  const nq = normalizeForMatch(quote);
+  if (!nq || nq.length < 4) return false;
+  return extractTraineeLines(transcript)
+    .map(normalizeForMatch)
+    .some((l) => l.includes(nq));
+}
+
+/** Clear any cached transcript / evaluation / db session from the browser. */
+export function clearSessionEvaluationData() {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.removeItem(LAST_EVAL_KEY);
+  window.sessionStorage.removeItem(TRANSCRIPT_KEY);
+  window.sessionStorage.removeItem(DB_SESSION_KEY);
+}
 
 export type ReadinessBand =
   | "Production Ready"
@@ -397,10 +449,11 @@ export function evaluateTranscript(
   transcript: string,
   session: TrainingSession,
   durationSeconds: number,
+  options: { isDemo?: boolean } = {},
 ): EvaluationRecord {
-  const text = transcript.toLowerCase();
+  const text = (transcript ?? "").toLowerCase();
   const has = (words: string[]) => words.some((w) => text.includes(w.toLowerCase()));
-  const lines = transcript
+  const lines = (transcript ?? "")
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter(Boolean);
@@ -411,6 +464,45 @@ export function evaluateTranscript(
   const mode = deriveMode(session.coreModule);
   const componentFocus =
     mode === "Component-Based Coaching Module" ? session.subOption : null;
+
+  // ---- Insufficient-evidence guard (Rule 7) ----
+  // With no meaningful trainee content in the current transcript we do NOT
+  // fabricate scores, categories, evidence or a certification decision.
+  const traineeWordCount = traineeLines.join(" ").split(/\s+/).filter(Boolean).length;
+  if (traineeLines.length < 2 || traineeWordCount < 20) {
+    return {
+      id: `eval_${Date.now()}`,
+      date: new Date().toISOString(),
+      durationSeconds,
+      session,
+      overallScore: 0,
+      categories: [],
+      readiness: "Not Ready",
+      certification: "Practice Attempt Only",
+      strengths: [],
+      missed: [],
+      improvements: [],
+      coachingSummary:
+        "Evaluation unavailable because the roleplay transcript does not contain enough evidence.",
+      nextScenario: session.scenario,
+      turns,
+      transcript,
+      mode,
+      callFlowAdherencePct: 0,
+      criticalComplianceStatus: "Passed",
+      assessmentValidity: "Invalid Due to Insufficient Evidence",
+      callFlow: [],
+      categoryDetails: [],
+      compliance: [],
+      evidence: [],
+      priorityActions: [],
+      certificationReason:
+        "No certification decision — transcript did not contain enough trainee evidence.",
+      isDemo: options.isDemo,
+      insufficientEvidence: true,
+    };
+  }
+
 
 
   // ---- Category scoring with detail ----
@@ -514,7 +606,7 @@ export function evaluateTranscript(
       max: c.max,
       wentWell: hit ? def.good : "Limited evidence of this competency",
       missed: hit && ratio >= 0.8 ? "Minor refinements only" : def.miss,
-      evidence: ev || "No evidence found in transcript.",
+      evidence: ev || NO_TRAINEE_EVIDENCE,
       improvement: def.improve,
     };
   });
@@ -621,7 +713,7 @@ export function evaluateTranscript(
       status,
       score: Math.round(s.max * ratio),
       max: s.max,
-      evidence: ev || (status === "Missed" ? "No evidence found in transcript." : ""),
+      evidence: ev || (status === "Missed" ? NO_TRAINEE_EVIDENCE : ""),
       missed: status === "Completed" ? "" : m.missed,
       coaching: status === "Completed" ? "" : m.coaching,
     };
@@ -730,7 +822,7 @@ export function evaluateTranscript(
           ? `Missed stage: ${callFlow.find((c) => c.status === "Missed")!.stage}`
           : "",
     },
-  ].map((e) => ({ label: e.label, quote: e.quote || "No evidence found in transcript." }));
+  ].map((e) => ({ label: e.label, quote: e.quote || NO_TRAINEE_EVIDENCE }));
 
   // ---- Strengths / missed / priority actions ----
   const sortedByGap = [...categoryDetails].sort(
@@ -817,6 +909,7 @@ export function evaluateTranscript(
     previousScore,
     strongestStage: strongest[0]?.name,
     weakestStage: weakest[0]?.name,
+    isDemo: options.isDemo,
   };
 }
 

@@ -3,8 +3,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { AppShell } from "@/components/AppShell";
 import {
+  NO_TRAINEE_EVIDENCE,
   loadLastEvaluation,
   saveEvaluation,
+  verifyTraineeQuote,
   type CertificationOutcome,
   type ComplianceStatus,
   type EvaluationRecord,
@@ -144,6 +146,30 @@ function EvaluationPage() {
 
   const s = record.session;
   const criticalFailed = record.criticalComplianceStatus === "Failed";
+  const activeTranscript = record.transcript ?? "";
+
+  /**
+   * Render a quote only when it can be traced verbatim to a trainee line in
+   * the current session transcript. Otherwise fall back to plain
+   * "No supporting trainee evidence found in the transcript." text without
+   * quotation marks so evaluator wording is never mistaken for a real quote.
+   */
+  const renderQuote = (quote: string | undefined | null) => {
+    const trimmed = (quote ?? "").trim();
+    if (!trimmed || trimmed === NO_TRAINEE_EVIDENCE) {
+      return { text: NO_TRAINEE_EVIDENCE, isQuote: false };
+    }
+    if (verifyTraineeQuote(activeTranscript, trimmed)) {
+      return { text: trimmed, isQuote: true };
+    }
+    if (import.meta.env.DEV) {
+      // Dev-only audit trail — never surfaced to the client.
+      console.warn("[EvidenceAudit] Quote not found in transcript, dropping:", trimmed);
+    }
+    return { text: NO_TRAINEE_EVIDENCE, isQuote: false };
+  };
+
+
 
   const download = async () => {
     if (downloadState === "preparing") return;
@@ -223,6 +249,30 @@ function EvaluationPage() {
           </button>
         </div>
       </div>
+
+      {record.isDemo && (
+        <div className="mb-4 rounded-xl border border-warning/50 bg-[color-mix(in_oklab,var(--warning)_12%,transparent)] p-4 text-sm font-medium text-[color-mix(in_oklab,var(--warning)_60%,black)]">
+          <span className="font-semibold uppercase tracking-wide">Demo Mode</span> — this
+          report was generated from an illustrative sample transcript and must not be
+          used for real trainee coaching or certification decisions.
+        </div>
+      )}
+
+      {record.insufficientEvidence && (
+        <div className="mb-4 rounded-xl border border-destructive/40 bg-[color-mix(in_oklab,var(--destructive)_10%,transparent)] p-5 text-sm text-destructive">
+          <div className="text-base font-semibold">
+            Evaluation unavailable because the roleplay transcript does not contain
+            enough evidence.
+          </div>
+          <p className="mt-2 text-xs">
+            Assessment Validity:{" "}
+            <span className="font-semibold">Invalid Due to Insufficient Evidence</span>.
+            No scores, evidence, or certification decision have been generated. Please
+            complete a full roleplay attempt before requesting an evaluation.
+          </p>
+        </div>
+      )}
+
 
       {/* Session summary chips */}
       <div className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-3 lg:grid-cols-6">
@@ -359,12 +409,19 @@ function EvaluationPage() {
                     {stage.status === "Not Applicable" ? "—" : `${stage.score}/${stage.max}`}
                   </td>
                   <td className="px-4 py-3 align-top text-xs text-muted-foreground">
-                    {stage.evidence && (
-                      <div>
-                        <span className="font-medium text-foreground">Evidence:</span>{" "}
-                        <span className="italic">“{stage.evidence}”</span>
-                      </div>
-                    )}
+                    {(() => {
+                      const q = renderQuote(stage.evidence);
+                      return (
+                        <div>
+                          <span className="font-medium text-foreground">Evidence:</span>{" "}
+                          {q.isQuote ? (
+                            <span className="italic">“{q.text}”</span>
+                          ) : (
+                            <span>{q.text}</span>
+                          )}
+                        </div>
+                      );
+                    })()}
                     {stage.missed && (
                       <div className="mt-1">
                         <span className="font-medium text-[color-mix(in_oklab,var(--warning)_50%,black)]">Missed:</span>{" "}
@@ -416,14 +473,21 @@ function EvaluationPage() {
                   </div>
                   <span className="text-xs text-muted-foreground">{isOpen ? "Hide" : "Details"}</span>
                 </button>
-                {isOpen && (
-                  <div className="grid grid-cols-1 gap-3 border-t border-border px-5 py-4 text-sm md:grid-cols-2">
-                    <DetailBlock label="What was done well" value={c.wentWell} />
-                    <DetailBlock label="What was missed" value={c.missed} />
-                    <DetailBlock label="Evidence from transcript" value={`“${c.evidence}”`} italic />
-                    <DetailBlock label="Improvement action" value={c.improvement} tone="teal" />
-                  </div>
-                )}
+                {isOpen && (() => {
+                  const q = renderQuote(c.evidence);
+                  return (
+                    <div className="grid grid-cols-1 gap-3 border-t border-border px-5 py-4 text-sm md:grid-cols-2">
+                      <DetailBlock label="Evaluator Note — Strengths" value={c.wentWell} />
+                      <DetailBlock label="Evaluator Note — Gaps" value={c.missed} />
+                      <DetailBlock
+                        label="Evidence (exact trainee quote)"
+                        value={q.isQuote ? `“${q.text}”` : q.text}
+                        italic={q.isQuote}
+                      />
+                      <DetailBlock label="Coaching Action" value={c.improvement} tone="teal" />
+                    </div>
+                  );
+                })()}
               </div>
             );
           })}
@@ -562,17 +626,24 @@ function EvaluationPage() {
       {/* Transcript evidence */}
       <Section title="Transcript Evidence">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          {(record.evidence ?? []).map((e) => (
-            <div
-              key={e.label}
-              className="rounded-xl border border-border bg-surface p-4 shadow-card"
-            >
-              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                {e.label}
+          {(record.evidence ?? []).map((e) => {
+            const q = renderQuote(e.quote);
+            return (
+              <div
+                key={e.label}
+                className="rounded-xl border border-border bg-surface p-4 shadow-card"
+              >
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {e.label}
+                </div>
+                {q.isQuote ? (
+                  <p className="mt-2 text-sm italic text-foreground">“{q.text}”</p>
+                ) : (
+                  <p className="mt-2 text-sm text-muted-foreground">{q.text}</p>
+                )}
               </div>
-              <p className="mt-2 text-sm italic text-foreground">“{e.quote}”</p>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </Section>
 
