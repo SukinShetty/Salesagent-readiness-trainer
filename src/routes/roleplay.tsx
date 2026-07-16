@@ -226,6 +226,7 @@ function LiveRoleplay() {
   }, [connectFailed, hasStarted, status, isSpeaking, ended]);
 
   const start = useCallback(async () => {
+    if (!session) return;
     setConnectFailed(false);
     setMicDenied(false);
     setEnded(false);
@@ -238,14 +239,14 @@ function LiveRoleplay() {
       return;
     }
     try {
-      const args = await getSessionStartArgs();
+      const args = await getSessionStartArgs(session);
       await conversation.startSession(args);
       setStartedAt(Date.now());
     } catch {
       setConnectFailed(true);
       setHasStarted(false);
     }
-  }, [conversation]);
+  }, [conversation, session]);
 
   const end = useCallback(async () => {
     try {
