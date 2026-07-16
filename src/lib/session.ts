@@ -1,14 +1,6 @@
 // Shared option catalog + session storage for the KGIS Sales Training AI POC.
 
-export const DEPARTMENTS = [
-  "Sales",
-  "Customer Acquisition",
-  "Retention",
-  "Upselling",
-  "Customer Service",
-] as const;
-
-export const PROJECTS = ["Project 1", "Project 2", "Custom Project"] as const;
+export const PROJECTS = ["Project 1", "Project 2"] as const;
 
 export const PROVIDERS = [
   "Provider 1",
@@ -17,54 +9,73 @@ export const PROVIDERS = [
   "Provider 4",
   "Provider 5",
   "Provider 6",
-  "General Telecom Training",
+  "Other Future Provider",
 ] as const;
 
-export type TrainingModeGroup = {
-  group: "Component Practice" | "Full Call Flow Practice" | "Assessment Mode";
-  options: string[];
+export const CORE_MODULES = [
+  "Component-Based Coaching Module",
+  "Full Call Flow Coaching Module",
+  "Assessment Module",
+] as const;
+
+export type CoreModule = (typeof CORE_MODULES)[number];
+
+export const COMPONENT_STAGES = [
+  "Opening",
+  "Discovery and Fact Finding",
+  "Product Recommendation and Pitching",
+  "Objection Handling",
+  "Order Processing and Disclosures",
+  "Recap and Call Closing",
+] as const;
+
+export const SIMULATION_TYPES = [
+  "Sales Scenario",
+  "Non-Sales Scenario",
+  "Provider-Specific Interaction",
+  "End-to-End Call Simulation",
+] as const;
+
+export const ASSESSMENT_TYPES = [
+  "Final Trainee Evaluation",
+  "Certification Before Production",
+] as const;
+
+export const SUB_OPTIONS: Record<
+  CoreModule,
+  { label: string; options: readonly string[] }
+> = {
+  "Component-Based Coaching Module": {
+    label: "Training Stage",
+    options: COMPONENT_STAGES,
+  },
+  "Full Call Flow Coaching Module": {
+    label: "Simulation Type",
+    options: SIMULATION_TYPES,
+  },
+  "Assessment Module": {
+    label: "Assessment Type",
+    options: ASSESSMENT_TYPES,
+  },
 };
 
-export const TRAINING_MODES: TrainingModeGroup[] = [
-  {
-    group: "Component Practice",
-    options: [
-      "Opening and Greeting",
-      "Discovery and Fact Finding",
-      "Product Recommendation",
-      "FBB Pitching",
-      "Objection Handling",
-      "Order Processing and Disclosures",
-      "Closing and Recap",
-    ],
-  },
-  {
-    group: "Full Call Flow Practice",
-    options: [
-      "Complete end-to-end sales call",
-      "Sales scenario",
-      "Non-sales scenario",
-      "Provider-specific interaction",
-    ],
-  },
-  {
-    group: "Assessment Mode",
-    options: [
-      "Final simulated call",
-      "Performance scoring",
-      "Certification readiness",
-    ],
-  },
+// Kept for back-compat with trainer filters that flatten sub-options.
+export const TRAINING_MODES: { group: CoreModule; options: readonly string[] }[] = [
+  { group: "Component-Based Coaching Module", options: COMPONENT_STAGES },
+  { group: "Full Call Flow Coaching Module", options: SIMULATION_TYPES },
+  { group: "Assessment Module", options: ASSESSMENT_TYPES },
 ];
 
 export const SCENARIOS = [
-  "Price-Sensitive Customer",
+  "Sales Call",
+  "Non-Sale Call",
   "Shopping Customer",
-  "Skeptical Customer",
-  "Impatient Customer",
+  "Price-Sensitive Customer",
   "Objection-Heavy Customer",
-  "Genuine Buyer",
   "Customer Service Inquiry",
+  "Genuine Buyer",
+  "Impatient Customer",
+  "Skeptical Customer",
   "Price Comparison Call",
   "Upsell Opportunity",
   "Cross-Sell Opportunity",
@@ -72,15 +83,6 @@ export const SCENARIOS = [
 
 export const DIFFICULTIES = ["Beginner", "Intermediate", "Advanced"] as const;
 
-export const TELECOM_SERVICES = [
-  "Internet",
-  "TV",
-  "Wireless",
-  "Home Phone",
-  "Bundle / Multiple Services",
-] as const;
-
-export type TelecomService = (typeof TELECOM_SERVICES)[number];
 
 export type ScenarioBrief = {
   scenario: string;
