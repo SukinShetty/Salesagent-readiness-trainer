@@ -18,6 +18,7 @@ import {
   ratingToneClass,
   type VoiceEvaluation,
 } from "@/lib/voice-evaluation";
+import { buildFilename, generateEvaluationPdf } from "@/lib/evaluation-pdf";
 
 export const Route = createFileRoute("/evaluation")({
   head: () => ({
