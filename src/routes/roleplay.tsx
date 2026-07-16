@@ -725,22 +725,16 @@ function LiveRoleplay() {
                 Unable to start the roleplay. Please try again.
                 <div className="mt-2">
                   <button
-                    onClick={() => {
-                      fallbackTriedRef.current = false;
-                      void start();
-                    }}
-                    className="rounded-md bg-destructive px-3 py-1.5 text-xs font-semibold text-destructive-foreground"
+                    onClick={() => void retry()}
+                    disabled={sessionStartingRef.current || sessionEndingRef.current}
+                    className="rounded-md bg-destructive px-3 py-1.5 text-xs font-semibold text-destructive-foreground disabled:opacity-60"
                   >
                     Retry
                   </button>
                 </div>
               </div>
             )}
-            {isReconnecting && (
-              <div className="mt-4 rounded-lg border border-border bg-teal-soft/60 p-3 text-sm text-teal">
-                Reconnecting roleplay…
-              </div>
-            )}
+
 
             {/* Controls */}
             <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
