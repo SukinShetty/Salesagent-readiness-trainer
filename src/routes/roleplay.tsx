@@ -7,17 +7,24 @@ import {
   useConversationMode,
   useConversationStatus,
 } from "@elevenlabs/react";
+import { useServerFn } from "@tanstack/react-start";
 import { AppShell } from "@/components/AppShell";
 import {
   DEMO_TRANSCRIPT,
   SUB_OPTIONS,
   evaluateTranscript,
   getScenarioBrief,
+  loadDbSessionId,
   loadSession,
   saveEvaluation,
   saveTranscript,
   type TrainingSession,
 } from "@/lib/session";
+import {
+  attachConversationId,
+  finalizeRoleplaySession,
+} from "@/lib/roleplay-sessions.functions";
+import { retrieveRoleplayAudio } from "@/lib/roleplay-audio.functions";
 
 const AGENT_ID = "agent_6801kxj68508fhdb7p2hzrqbrerw";
 const IS_DEV = import.meta.env.DEV;
@@ -160,8 +167,12 @@ function LiveRoleplay() {
   const { status } = useConversationStatus();
   const { isSpeaking } = useConversationMode();
   const { isMuted, setMuted } = useConversationInput();
+  const attachConvId = useServerFn(attachConversationId);
+  const finalizeSession = useServerFn(finalizeRoleplaySession);
+  const retrieveAudio = useServerFn(retrieveRoleplayAudio);
 
   const [session, setSession] = useState<TrainingSession | null>(null);
+  const [dbSessionId, setDbSessionId] = useState<string | null>(null);
   const [transcriptText, setTranscriptText] = useState("");
   const [hasStarted, setHasStarted] = useState(false);
   const [ended, setEnded] = useState(false);
@@ -177,9 +188,12 @@ function LiveRoleplay() {
   const fallbackTriedRef = useRef(false);
   const thinkingTimerRef = useRef<number | null>(null);
   const wasUserSpeakingRef = useRef(false);
+  const conversationIdRef = useRef<string | null>(null);
+  const convIdAttachedRef = useRef(false);
 
   useEffect(() => {
     setSession(loadSession());
+    setDbSessionId(loadDbSessionId());
   }, []);
 
   const brief = useMemo(
@@ -420,15 +434,78 @@ function LiveRoleplay() {
     }
   }, [session, status, startWith]);
 
+  // Capture the provider conversation ID once we're connected and persist it
+  // against the DB row. Never rendered in the UI.
+  useEffect(() => {
+    if (status !== "connected") return;
+    if (!dbSessionId || convIdAttachedRef.current) return;
+    let cancelled = false;
+    let attempts = 0;
+    const tick = () => {
+      if (cancelled || convIdAttachedRef.current) return;
+      attempts++;
+      let convId: string | null = null;
+      try {
+        convId = controls.getId?.() ?? null;
+      } catch {
+        convId = null;
+      }
+      if (convId) {
+        conversationIdRef.current = convId;
+        convIdAttachedRef.current = true;
+        void attachConvId({ data: { sessionId: dbSessionId, conversationId: convId } }).catch(
+          (e) => console.warn("[Session] attach conv id failed", e),
+        );
+        return;
+      }
+      if (attempts < 20) window.setTimeout(tick, 500);
+    };
+    tick();
+    return () => {
+      cancelled = true;
+    };
+  }, [status, dbSessionId, controls, attachConvId]);
+
   const end = useCallback(async () => {
     try {
+      // Grab the id one last time before disconnecting.
+      if (!conversationIdRef.current) {
+        try {
+          conversationIdRef.current = controls.getId?.() ?? null;
+        } catch {
+          /* noop */
+        }
+      }
       await controls.endSession();
     } catch {
       /* noop */
     }
     setEnded(true);
     setIsReconnecting(false);
-  }, [controls]);
+
+    // Persist ended_at + transcript + duration, then kick off audio retrieval.
+    // Non-blocking so the trainer can generate the evaluation immediately.
+    if (dbSessionId) {
+      const duration = startedAtRef.current
+        ? Math.floor((Date.now() - startedAtRef.current) / 1000)
+        : durationSeconds;
+      void finalizeSession({
+        data: {
+          sessionId: dbSessionId,
+          endedAt: new Date().toISOString(),
+          durationSeconds: duration,
+          transcript: transcriptText,
+        },
+      }).catch((e) => console.warn("[Session] finalize failed", e));
+
+      const convId = conversationIdRef.current;
+      if (convId) {
+        void retrieveAudio({
+          data: { sessionId: dbSessionId, conversationId: convId },
+        }).catch((e) => console.warn("[Audio] retrieve failed", e));
+      }
+    }
+  }, [controls, dbSessionId, durationSeconds, transcriptText, finalizeSession, retrieveAudio]);
 
   const toggleMute = useCallback(() => {
     try {
@@ -459,7 +536,21 @@ function LiveRoleplay() {
     if (!session) return;
     saveTranscript(transcriptText);
     const record = evaluateTranscript(transcriptText, session, durationSeconds);
-    saveEvaluation(record);
+    const withDb = dbSessionId ? { ...record, dbSessionId } : record;
+    saveEvaluation(withDb);
+    // Also persist the final transcript + evaluation on the DB row so the
+    // trainer view can retrieve it later alongside the audio.
+    if (dbSessionId) {
+      void finalizeSession({
+        data: {
+          sessionId: dbSessionId,
+          endedAt: new Date().toISOString(),
+          durationSeconds,
+          transcript: transcriptText,
+          evaluation: withDb,
+        },
+      }).catch((e) => console.warn("[Session] finalize on evaluation failed", e));
+    }
     navigate({ to: "/evaluation" });
   };
 

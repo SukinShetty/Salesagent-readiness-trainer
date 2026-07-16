@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { AppShell } from "@/components/AppShell";
 import {
   CORE_MODULES,
@@ -8,10 +9,13 @@ import {
   PROVIDERS,
   SCENARIOS,
   SUB_OPTIONS,
+  getClientSessionId,
+  saveDbSessionId,
   saveSession,
   type CoreModule,
   type TrainingSession,
 } from "@/lib/session";
+import { createRoleplaySession } from "@/lib/roleplay-sessions.functions";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -53,6 +57,9 @@ function StartTraining() {
   const navigate = useNavigate();
   const [form, setForm] = useState<FormState>(initial);
   const [error, setError] = useState<string | null>(null);
+  const [consent, setConsent] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const createSession = useServerFn(createRoleplaySession);
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -64,7 +71,7 @@ function StartTraining() {
     setForm((f) => ({ ...f, coreModule: value, subOption: cfg.options[0] }));
   };
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (
       !form.salespersonName.trim() ||
@@ -74,9 +81,39 @@ function StartTraining() {
       setError("Trainee Name, Trainee ID and Batch Name are required.");
       return;
     }
+    if (!consent) {
+      setError("Recording consent is required to begin the roleplay.");
+      return;
+    }
     setError(null);
-    saveSession(form);
-    navigate({ to: "/roleplay" });
+    setSubmitting(true);
+    try {
+      const result = await createSession({
+        data: {
+          clientSessionId: getClientSessionId(),
+          traineeName: form.salespersonName,
+          traineeId: form.employeeId,
+          batch: form.batchName,
+          project: form.project,
+          provider: form.provider,
+          coreModule: form.coreModule,
+          subOption: form.subOption,
+          scenario: form.scenario,
+          difficulty: form.difficulty,
+          consentGiven: true,
+        },
+      });
+      saveSession(form);
+      saveDbSessionId(result.sessionId);
+      navigate({ to: "/roleplay" });
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? `Could not start session: ${err.message}`
+          : "Could not start session.",
+      );
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -198,6 +235,28 @@ function StartTraining() {
           </div>
         </section>
 
+        {/* Recording consent gate */}
+        <section className="mt-8">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Recording &amp; Consent
+          </h2>
+          <div className="mt-3 rounded-xl border border-border bg-background p-4 text-sm text-foreground">
+            <p>
+              This simulated training call will be recorded and analysed for
+              coaching and assessment purposes.
+            </p>
+            <label className="mt-3 flex cursor-pointer items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={consent}
+                onChange={(e) => setConsent(e.target.checked)}
+                className="mt-1 h-4 w-4 accent-[var(--primary)]"
+              />
+              <span>I understand and consent to this training recording.</span>
+            </label>
+          </div>
+        </section>
+
         {error && (
           <div className="mt-6 rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
             {error}
@@ -207,9 +266,10 @@ function StartTraining() {
         <div className="mt-8 flex items-center justify-end gap-3">
           <button
             type="submit"
-            className="rounded-md bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground shadow-card hover:opacity-90"
+            disabled={!consent || submitting}
+            className="rounded-md bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground shadow-card hover:opacity-90 disabled:opacity-50"
           >
-            Begin Roleplay
+            {submitting ? "Preparing…" : "Begin Roleplay"}
           </button>
         </div>
       </form>

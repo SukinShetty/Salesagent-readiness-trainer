@@ -14,7 +14,87 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      roleplay_sessions: {
+        Row: {
+          audio_error: string | null
+          audio_path: string | null
+          audio_status: string
+          batch: string | null
+          client_session_id: string
+          consent_given: boolean
+          conversation_id: string | null
+          core_module: string | null
+          created_at: string
+          difficulty: string | null
+          duration_seconds: number | null
+          ended_at: string | null
+          evaluation: Json | null
+          evaluation_status: string
+          id: string
+          project: string | null
+          provider: string | null
+          scenario: string | null
+          started_at: string | null
+          sub_option: string | null
+          trainee_id: string | null
+          trainee_name: string | null
+          transcript: string | null
+          updated_at: string
+        }
+        Insert: {
+          audio_error?: string | null
+          audio_path?: string | null
+          audio_status?: string
+          batch?: string | null
+          client_session_id: string
+          consent_given?: boolean
+          conversation_id?: string | null
+          core_module?: string | null
+          created_at?: string
+          difficulty?: string | null
+          duration_seconds?: number | null
+          ended_at?: string | null
+          evaluation?: Json | null
+          evaluation_status?: string
+          id?: string
+          project?: string | null
+          provider?: string | null
+          scenario?: string | null
+          started_at?: string | null
+          sub_option?: string | null
+          trainee_id?: string | null
+          trainee_name?: string | null
+          transcript?: string | null
+          updated_at?: string
+        }
+        Update: {
+          audio_error?: string | null
+          audio_path?: string | null
+          audio_status?: string
+          batch?: string | null
+          client_session_id?: string
+          consent_given?: boolean
+          conversation_id?: string | null
+          core_module?: string | null
+          created_at?: string
+          difficulty?: string | null
+          duration_seconds?: number | null
+          ended_at?: string | null
+          evaluation?: Json | null
+          evaluation_status?: string
+          id?: string
+          project?: string | null
+          provider?: string | null
+          scenario?: string | null
+          started_at?: string | null
+          sub_option?: string | null
+          trainee_id?: string | null
+          trainee_name?: string | null
+          transcript?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

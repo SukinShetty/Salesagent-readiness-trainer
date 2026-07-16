@@ -187,6 +187,8 @@ const SESSION_KEY = "kgis:session";
 const HISTORY_KEY = "kgis:history";
 const LAST_EVAL_KEY = "kgis:lastEvaluation";
 const TRANSCRIPT_KEY = "kgis:lastTranscript";
+const DB_SESSION_KEY = "kgis:dbSessionId";
+const CLIENT_SESSION_KEY = "kgis:clientSessionId";
 
 export function saveSession(session: TrainingSession) {
   if (typeof window === "undefined") return;
@@ -211,6 +213,27 @@ export function saveTranscript(text: string) {
 export function loadTranscript(): string {
   if (typeof window === "undefined") return "";
   return window.sessionStorage.getItem(TRANSCRIPT_KEY) ?? "";
+}
+
+/** Stable per-browser identifier for correlating DB rows in this POC. */
+export function getClientSessionId(): string {
+  if (typeof window === "undefined") return "server";
+  let id = window.localStorage.getItem(CLIENT_SESSION_KEY);
+  if (!id) {
+    id = `cs_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+    window.localStorage.setItem(CLIENT_SESSION_KEY, id);
+  }
+  return id;
+}
+
+export function saveDbSessionId(id: string | null) {
+  if (typeof window === "undefined") return;
+  if (id) window.sessionStorage.setItem(DB_SESSION_KEY, id);
+  else window.sessionStorage.removeItem(DB_SESSION_KEY);
+}
+export function loadDbSessionId(): string | null {
+  if (typeof window === "undefined") return null;
+  return window.sessionStorage.getItem(DB_SESSION_KEY);
 }
 
 export type EvaluationMode = CoreModule;
@@ -293,6 +316,7 @@ export type EvaluationRecord = {
   previousScore?: number | null;
   strongestStage?: string;
   weakestStage?: string;
+  dbSessionId?: string; // Server-side row id for audio + persisted transcript
 };
 
 export type ReadinessBand =
