@@ -473,14 +473,21 @@ function EvaluationPage() {
                   </div>
                   <span className="text-xs text-muted-foreground">{isOpen ? "Hide" : "Details"}</span>
                 </button>
-                {isOpen && (
-                  <div className="grid grid-cols-1 gap-3 border-t border-border px-5 py-4 text-sm md:grid-cols-2">
-                    <DetailBlock label="What was done well" value={c.wentWell} />
-                    <DetailBlock label="What was missed" value={c.missed} />
-                    <DetailBlock label="Evidence from transcript" value={`“${c.evidence}”`} italic />
-                    <DetailBlock label="Improvement action" value={c.improvement} tone="teal" />
-                  </div>
-                )}
+                {isOpen && (() => {
+                  const q = renderQuote(c.evidence);
+                  return (
+                    <div className="grid grid-cols-1 gap-3 border-t border-border px-5 py-4 text-sm md:grid-cols-2">
+                      <DetailBlock label="Evaluator Note — Strengths" value={c.wentWell} />
+                      <DetailBlock label="Evaluator Note — Gaps" value={c.missed} />
+                      <DetailBlock
+                        label="Evidence (exact trainee quote)"
+                        value={q.isQuote ? `“${q.text}”` : q.text}
+                        italic={q.isQuote}
+                      />
+                      <DetailBlock label="Coaching Action" value={c.improvement} tone="teal" />
+                    </div>
+                  );
+                })()}
               </div>
             );
           })}
