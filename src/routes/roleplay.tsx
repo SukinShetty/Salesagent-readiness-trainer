@@ -518,7 +518,9 @@ function LiveRoleplay() {
   const generateEvaluation = () => {
     if (!session) return;
     saveTranscript(transcriptText);
-    const record = evaluateTranscript(transcriptText, session, durationSeconds);
+    const record = evaluateTranscript(transcriptText, session, durationSeconds, {
+      isDemo: isDemoTranscript,
+    });
     const withDb = dbSessionId ? { ...record, dbSessionId } : record;
     saveEvaluation(withDb);
     // Also persist the final transcript + evaluation on the DB row so the
