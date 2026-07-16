@@ -61,16 +61,6 @@ function getSafeErrorMessage(error: unknown): string {
   }
 }
 
-function isDataChannelOrRtcError(error: unknown): boolean {
-  const msg = getSafeErrorMessage(error).toLowerCase();
-  return (
-    msg.includes("datachannel") ||
-    msg.includes("data channel") ||
-    msg.includes("rtc") ||
-    msg.includes("peerconnection") ||
-    msg.includes("ice")
-  );
-}
 
 function LiveRoleplayPage() {
   // Provider is mounted for the full lifetime of the route. Callbacks are
