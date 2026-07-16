@@ -900,15 +900,15 @@ export const SAMPLE_HISTORY: EvaluationRecord[] = [
     session: {
       salespersonName: "Priya Nair",
       employeeId: "KGIS-1256",
-      department: "Retention",
       batchName: "Batch B-09",
       project: "Project 1",
       provider: "Provider 1",
-      telecomService: "Bundle / Multiple Services",
-      trainingMode: "Final simulated call",
+      coreModule: "Assessment Module",
+      subOption: "Final Trainee Evaluation",
       scenario: "Genuine Buyer",
       difficulty: "Beginner",
     },
+
     overallScore: 62,
     categories: QMF_CATEGORIES.map((c) => ({
       name: c.name,
