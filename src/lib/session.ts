@@ -606,7 +606,7 @@ export function evaluateTranscript(
       max: c.max,
       wentWell: hit ? def.good : "Limited evidence of this competency",
       missed: hit && ratio >= 0.8 ? "Minor refinements only" : def.miss,
-      evidence: ev || "No evidence found in transcript.",
+      evidence: ev || NO_TRAINEE_EVIDENCE,
       improvement: def.improve,
     };
   });
@@ -713,7 +713,7 @@ export function evaluateTranscript(
       status,
       score: Math.round(s.max * ratio),
       max: s.max,
-      evidence: ev || (status === "Missed" ? "No evidence found in transcript." : ""),
+      evidence: ev || (status === "Missed" ? NO_TRAINEE_EVIDENCE : ""),
       missed: status === "Completed" ? "" : m.missed,
       coaching: status === "Completed" ? "" : m.coaching,
     };
@@ -822,7 +822,7 @@ export function evaluateTranscript(
           ? `Missed stage: ${callFlow.find((c) => c.status === "Missed")!.stage}`
           : "",
     },
-  ].map((e) => ({ label: e.label, quote: e.quote || "No evidence found in transcript." }));
+  ].map((e) => ({ label: e.label, quote: e.quote || NO_TRAINEE_EVIDENCE }));
 
   // ---- Strengths / missed / priority actions ----
   const sortedByGap = [...categoryDetails].sort(
