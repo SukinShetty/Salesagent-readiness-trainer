@@ -250,6 +250,30 @@ function EvaluationPage() {
         </div>
       </div>
 
+      {record.isDemo && (
+        <div className="mb-4 rounded-xl border border-warning/50 bg-[color-mix(in_oklab,var(--warning)_12%,transparent)] p-4 text-sm font-medium text-[color-mix(in_oklab,var(--warning)_60%,black)]">
+          <span className="font-semibold uppercase tracking-wide">Demo Mode</span> — this
+          report was generated from an illustrative sample transcript and must not be
+          used for real trainee coaching or certification decisions.
+        </div>
+      )}
+
+      {record.insufficientEvidence && (
+        <div className="mb-4 rounded-xl border border-destructive/40 bg-[color-mix(in_oklab,var(--destructive)_10%,transparent)] p-5 text-sm text-destructive">
+          <div className="text-base font-semibold">
+            Evaluation unavailable because the roleplay transcript does not contain
+            enough evidence.
+          </div>
+          <p className="mt-2 text-xs">
+            Assessment Validity:{" "}
+            <span className="font-semibold">Invalid Due to Insufficient Evidence</span>.
+            No scores, evidence, or certification decision have been generated. Please
+            complete a full roleplay attempt before requesting an evaluation.
+          </p>
+        </div>
+      )}
+
+
       {/* Session summary chips */}
       <div className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-3 lg:grid-cols-6">
         <SummaryChip label="Trainee Name" value={s.salespersonName} />
