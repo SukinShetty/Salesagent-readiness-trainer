@@ -776,7 +776,10 @@ function LiveRoleplay() {
                 <div className="text-xs text-muted-foreground">Editable · Trainer can correct</div>
               </div>
               <button
-                onClick={() => setTranscriptText("")}
+                onClick={() => {
+                  setTranscriptText("");
+                  setIsDemoTranscript(false);
+                }}
                 className="text-xs text-muted-foreground hover:text-foreground"
               >
                 Clear
@@ -784,16 +787,25 @@ function LiveRoleplay() {
             </div>
             <textarea
               value={transcriptText}
-              onChange={(e) => setTranscriptText(e.target.value)}
+              onChange={(e) => {
+                setTranscriptText(e.target.value);
+                if (isDemoTranscript) setIsDemoTranscript(false);
+              }}
               placeholder="Transcript will appear here during the roleplay. Speaker labels: AI Customer, Trainee."
               className="mt-3 min-h-[380px] flex-1 resize-none overflow-auto rounded-md border border-input bg-background p-3 text-xs leading-relaxed text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             />
+            {isDemoTranscript && (
+              <div className="mt-2 rounded-md border border-warning/40 bg-[color-mix(in_oklab,var(--warning)_15%,transparent)] px-3 py-2 text-[11px] font-medium text-[color-mix(in_oklab,var(--warning)_60%,black)]">
+                Demo Mode — evaluation will be clearly marked as demo. This transcript
+                is illustrative and must not be used for real trainee certification.
+              </div>
+            )}
             <div className="mt-3 flex flex-col gap-2">
               <button
                 onClick={useDemo}
-                className="rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-foreground hover:bg-secondary"
+                className="rounded-md border border-warning/50 bg-[color-mix(in_oklab,var(--warning)_10%,transparent)] px-4 py-2 text-sm font-medium text-[color-mix(in_oklab,var(--warning)_60%,black)] hover:bg-[color-mix(in_oklab,var(--warning)_18%,transparent)]"
               >
-                Use Demo Transcript
+                Load Demo Mode Transcript (illustrative only)
               </button>
               <button
                 onClick={end}
