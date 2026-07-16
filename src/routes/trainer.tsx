@@ -37,21 +37,50 @@ const READINESS: ReadinessBand[] = [
   "Not Ready",
 ];
 
+const TRAINER_VIEW_STATE_KEY = "kgis:trainerViewState";
+
+type TrainerViewState = {
+  query: string;
+  fProject: string;
+  fProvider: string;
+  fModule: string;
+  fScenario: string;
+  fReadiness: string;
+  scrollY: number;
+};
+
+function readSavedTrainerState(): Partial<TrainerViewState> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.sessionStorage.getItem(TRAINER_VIEW_STATE_KEY);
+    return raw ? (JSON.parse(raw) as Partial<TrainerViewState>) : {};
+  } catch {
+    return {};
+  }
+}
+
 function TrainerView() {
   const navigate = useNavigate();
   const [history, setHistory] = useState<EvaluationRecord[]>([]);
-  const [query, setQuery] = useState("");
-  const [fProject, setFProject] = useState("All");
-  const [fProvider, setFProvider] = useState("All");
-  const [fModule, setFModule] = useState("All");
-  const [fScenario, setFScenario] = useState("All");
-  const [fReadiness, setFReadiness] = useState("All");
+  const saved = typeof window !== "undefined" ? readSavedTrainerState() : {};
+  const [query, setQuery] = useState(saved.query ?? "");
+  const [fProject, setFProject] = useState(saved.fProject ?? "All");
+  const [fProvider, setFProvider] = useState(saved.fProvider ?? "All");
+  const [fModule, setFModule] = useState(saved.fModule ?? "All");
+  const [fScenario, setFScenario] = useState(saved.fScenario ?? "All");
+  const [fReadiness, setFReadiness] = useState(saved.fReadiness ?? "All");
   const [assignOpen, setAssignOpen] = useState(false);
   const [assignMode, setAssignMode] = useState<"individual" | "batch" | "custom">(
     "individual",
   );
 
-  useEffect(() => setHistory(loadHistory()), []);
+  useEffect(() => {
+    setHistory(loadHistory());
+    const s = readSavedTrainerState();
+    if (typeof window !== "undefined" && typeof s.scrollY === "number") {
+      requestAnimationFrame(() => window.scrollTo(0, s.scrollY ?? 0));
+    }
+  }, []);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
