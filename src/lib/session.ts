@@ -72,6 +72,16 @@ export const SCENARIOS = [
 
 export const DIFFICULTIES = ["Beginner", "Intermediate", "Advanced"] as const;
 
+export const TELECOM_SERVICES = [
+  "Internet",
+  "TV",
+  "Wireless",
+  "Home Phone",
+  "Bundle / Multiple Services",
+] as const;
+
+export type TelecomService = (typeof TELECOM_SERVICES)[number];
+
 export type ScenarioBrief = {
   scenario: string;
   customerName: string;
