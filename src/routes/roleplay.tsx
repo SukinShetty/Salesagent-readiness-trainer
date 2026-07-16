@@ -40,8 +40,105 @@ type DisplayStatus =
  * server function that returns { conversationToken } (or a signed URL) and
  * pass it to conversation.startSession(...).
  */
-async function getSessionStartArgs() {
-  return { agentId: AGENT_ID, connectionType: "webrtc" as const };
+async function getSessionStartArgs(session: TrainingSession) {
+  return {
+    agentId: AGENT_ID,
+    connectionType: "webrtc" as const,
+    overrides: buildScenarioOverrides(session),
+  };
+}
+
+function buildScenarioOverrides(session: TrainingSession) {
+  const practiceType = deriveMode(session.trainingMode);
+  const prompt = buildScenarioPrompt(session, practiceType);
+  const firstMessage = buildFirstMessage(session);
+  return {
+    agent: {
+      prompt: { prompt },
+      firstMessage,
+    },
+  };
+}
+
+const SERVICE_GUIDE: Record<string, string> = {
+  Internet:
+    "Discuss speed, reliability, devices, streaming, work-from-home, installation, price, and contract.",
+  TV: "Discuss channels, sports, streaming, equipment, bundles, price, installation, and contract.",
+  Wireless:
+    "Discuss mobile plans, data limits, coverage, devices, number portability, roaming, price, and contract.",
+  "Home Phone":
+    "Discuss call reliability, international calls, emergency use, installation, bundles, and price.",
+  "Bundle / Multiple Services":
+    "Discuss combining Internet, TV, Wireless, or Home Phone and ask about total cost and savings.",
+};
+
+const SCENARIO_GUIDE: Record<string, string> = {
+  "Price-Sensitive Customer":
+    "Focus on monthly price, fees, contract, and future price increases. Push back on any unclear cost.",
+  "Shopping Customer":
+    "Compare options and avoid committing early. Ask what alternatives exist.",
+  "Skeptical Customer":
+    "Question claims, promotions, and reliability. Ask for proof or examples.",
+  "Impatient Customer":
+    "Demand short, direct answers and interrupt irrelevant explanations.",
+  "Objection-Heavy Customer":
+    "Raise several objections about value, pricing, contract, installation, and trust.",
+  "Genuine Buyer":
+    "Show clear buying intent but expect correct discovery and closing before agreeing.",
+  "Customer Service Inquiry":
+    "Begin with a service-related question and do not accept an irrelevant sales pitch.",
+  "Price Comparison Call":
+    "Compare the proposed offer with your existing provider's pricing and terms.",
+  "Upsell Opportunity":
+    "You already use a basic service and may consider an upgraded plan if value is clearly demonstrated.",
+  "Cross-Sell Opportunity":
+    "You already use one telecom service and may consider an additional service if it is relevant to your needs.",
+};
+
+const DIFFICULTY_GUIDE: Record<string, string> = {
+  Beginner: "Be cooperative and provide information easily when asked.",
+  Intermediate:
+    "Require good discovery and raise one or two realistic objections before agreeing to anything.",
+  Advanced:
+    "Reveal information only when asked, challenge vague answers, raise several objections, and require clear compliance explanations.",
+};
+
+function buildScenarioPrompt(session: TrainingSession, practiceType: string) {
+  const service = session.telecomService;
+  const scenario = session.scenario;
+  const difficulty = session.difficulty;
+  const skill = session.trainingMode;
+  const provider = session.provider;
+
+  return [
+    "You are acting as a US telecom customer in a KGIS sales training roleplay.",
+    "",
+    `Telecom service: ${service}`,
+    `Customer scenario: ${scenario}`,
+    `Difficulty: ${difficulty}`,
+    `Trainee practice focus: ${skill}`,
+    `Practice type: ${practiceType}`,
+    `Provider being pitched: ${provider}`,
+    `Sales program / project: ${session.project}`,
+    `Trainee department: ${session.department}`,
+    `Trainee name: ${session.salespersonName} (Employee ID ${session.employeeId})`,
+    "",
+    "Stay in character as the customer at all times.",
+    "Do not behave like a trainer. Do not coach the trainee during the roleplay. Do not reveal the scoring rubric or that this is an evaluation.",
+    "Adapt your needs, questions, objections, and behaviour to the selected telecom service and scenario.",
+    "Reveal personal details (household size, current provider, budget, usage) only when the trainee asks appropriate discovery questions.",
+    "",
+    `Service focus — ${service}: ${SERVICE_GUIDE[service] ?? SERVICE_GUIDE.Internet}`,
+    `Scenario behaviour — ${scenario}: ${SCENARIO_GUIDE[scenario] ?? ""}`,
+    `Difficulty behaviour — ${difficulty}: ${DIFFICULTY_GUIDE[difficulty] ?? ""}`,
+    "",
+    `Start the call with a short, natural opening line relevant to ${service} and the ${scenario} scenario. Wait for the trainee to respond.`,
+  ].join("\n");
+}
+
+function buildFirstMessage(session: TrainingSession) {
+  const svc = session.telecomService.toLowerCase();
+  return `Hi… I was calling about my ${svc} service.`;
 }
 
 function LiveRoleplayPage() {
