@@ -549,7 +549,7 @@ function LiveRoleplay() {
       "bg-[color-mix(in_oklab,var(--destructive)_20%,transparent)] text-destructive",
   };
 
-  const isLive = status === "connected" || status === "connecting" || isReconnecting;
+  const isLive = status === "connected" || status === "connecting";
   const durationMMSS = formatDuration(durationSeconds);
 
   if (!session) {
