@@ -41,6 +41,7 @@ const initial: FormState = {
   batchName: "",
   project: PROJECTS[0],
   provider: PROVIDERS[0],
+  telecomService: TELECOM_SERVICES[0],
   trainingMode: TRAINING_MODES[1].options[0], // Complete end-to-end sales call
   scenario: SCENARIOS[0],
   difficulty: DIFFICULTIES[1],
