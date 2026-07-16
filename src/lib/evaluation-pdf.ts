@@ -4,7 +4,7 @@
 
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import type { EvaluationRecord } from "@/lib/session";
+import { NO_TRAINEE_EVIDENCE, verifyTraineeQuote, type EvaluationRecord } from "@/lib/session";
 import type { VoiceEvaluation } from "@/lib/voice-evaluation";
 
 const NAVY: [number, number, number] = [15, 34, 74];
