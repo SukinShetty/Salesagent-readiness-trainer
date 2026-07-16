@@ -261,14 +261,13 @@ function EvaluationPage() {
       {record.insufficientEvidence && (
         <div className="mb-4 rounded-xl border border-destructive/40 bg-[color-mix(in_oklab,var(--destructive)_10%,transparent)] p-5 text-sm text-destructive">
           <div className="text-base font-semibold">
-            Evaluation unavailable because the roleplay transcript does not contain
-            enough evidence.
+            Live transcript was not captured for this roleplay. Evaluation cannot be
+            completed until the transcript is available.
           </div>
           <p className="mt-2 text-xs">
             Assessment Validity:{" "}
-            <span className="font-semibold">Invalid Due to Insufficient Evidence</span>.
-            No scores, evidence, or certification decision have been generated. Please
-            complete a full roleplay attempt before requesting an evaluation.
+            <span className="font-semibold">Insufficient Transcript Evidence</span>.
+            No scores, evidence, or certification decision have been generated.
           </p>
         </div>
       )}
