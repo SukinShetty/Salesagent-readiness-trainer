@@ -1,71 +1,90 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import {
   getRoleplaySession,
   getRoleplayAudioSignedUrl,
 } from "@/lib/roleplay-sessions.functions";
+import { retrieveRoleplayAudio } from "@/lib/roleplay-audio.functions";
 
 type Props = {
   sessionId: string | null;
   compact?: boolean;
 };
 
+type Phase = "pending" | "processing" | "ready" | "failed" | "unavailable" | "missing";
+
 const SPEEDS = [0.75, 1, 1.25, 1.5] as const;
+const IS_DEV = import.meta.env.DEV;
 
 /**
  * Native product-branded audio player for trainer review.
- * No vendor branding, no conversation IDs surfaced. Polls the session row
- * until audio_status is `ready` or `failed`, then loads a short-lived signed URL.
+ * Polls the session row until audio_status is `ready`, `failed`, or
+ * `unavailable`. When the recording is still being prepared, offers a
+ * "Check Recording Status" button that re-triggers the secure retrieval
+ * server function.
  */
 export function RoleplayAudioPlayer({ sessionId, compact }: Props) {
-  const [status, setStatus] = useState<"pending" | "ready" | "failed" | "missing">(
-    sessionId ? "pending" : "missing",
-  );
+  const [phase, setPhase] = useState<Phase>(sessionId ? "pending" : "missing");
   const [url, setUrl] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
   const [current, setCurrent] = useState(0);
   const [duration, setDuration] = useState(0);
   const [speed, setSpeed] = useState<number>(1);
+  const [checking, setChecking] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const fetchSession = useServerFn(getRoleplaySession);
   const fetchSignedUrl = useServerFn(getRoleplayAudioSignedUrl);
+  const retrieveAudio = useServerFn(retrieveRoleplayAudio);
+  const kickedRef = useRef(false);
+  const pollTimerRef = useRef<number | null>(null);
 
-  // Poll session row until audio_status resolves.
+  const poll = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      const row = await fetchSession({ data: { sessionId } });
+      if (!row) return;
+      if (IS_DEV)
+        console.log(
+          `[Player] session=${sessionId} audio_status=${row.audio_status} conv=${row.conversation_id ?? "-"}`,
+        );
+      if (row.audio_status === "ready") {
+        const signed = await fetchSignedUrl({ data: { sessionId } });
+        setUrl(signed.url);
+        setPhase(signed.url ? "ready" : "failed");
+        return;
+      }
+      if (row.audio_status === "failed") {
+        setPhase("failed");
+        return;
+      }
+      if (row.audio_status === "unavailable") {
+        setPhase("unavailable");
+        return;
+      }
+      // pending / processing — auto-kick once if not started, else keep polling
+      if (!kickedRef.current && row.conversation_id) {
+        kickedRef.current = true;
+        if (IS_DEV) console.log(`[Player] kicking retrieveAudio for session=${sessionId}`);
+        void retrieveAudio({ data: { sessionId } }).catch((e) =>
+          IS_DEV && console.warn("[Player] retrieve threw", e),
+        );
+      }
+      setPhase(row.audio_status === "processing" ? "processing" : "pending");
+      pollTimerRef.current = window.setTimeout(poll, 5_000);
+    } catch (e) {
+      if (IS_DEV) console.warn("[Player] poll error", e);
+      setPhase("failed");
+    }
+  }, [sessionId, fetchSession, fetchSignedUrl, retrieveAudio]);
+
   useEffect(() => {
     if (!sessionId) return;
-    let cancelled = false;
-    let attempts = 0;
-    const tick = async () => {
-      if (cancelled) return;
-      attempts++;
-      try {
-        const row = await fetchSession({ data: { sessionId } });
-        if (cancelled || !row) return;
-        if (row.audio_status === "ready") {
-          const signed = await fetchSignedUrl({ data: { sessionId } });
-          if (cancelled) return;
-          setUrl(signed.url);
-          setStatus(signed.url ? "ready" : "failed");
-          return;
-        }
-        if (row.audio_status === "failed") {
-          setStatus("failed");
-          return;
-        }
-        if (attempts < 20) {
-          window.setTimeout(tick, 3_000);
-        } else {
-          setStatus("failed");
-        }
-      } catch {
-        setStatus("failed");
-      }
-    };
-    void tick();
+    kickedRef.current = false;
+    void poll();
     return () => {
-      cancelled = true;
+      if (pollTimerRef.current !== null) window.clearTimeout(pollTimerRef.current);
     };
-  }, [sessionId, fetchSession, fetchSignedUrl]);
+  }, [sessionId, poll]);
 
   useEffect(() => {
     if (audioRef.current) audioRef.current.playbackRate = speed;
@@ -76,21 +95,51 @@ export function RoleplayAudioPlayer({ sessionId, compact }: Props) {
     [current, duration],
   );
 
-  if (status === "missing") return null;
+  const checkStatus = useCallback(async () => {
+    if (!sessionId || checking) return;
+    setChecking(true);
+    try {
+      if (IS_DEV) console.log(`[Player] manual re-check for session=${sessionId}`);
+      await retrieveAudio({ data: { sessionId } }).catch(() => {});
+      await poll();
+    } finally {
+      setChecking(false);
+    }
+  }, [sessionId, checking, retrieveAudio, poll]);
 
-  if (status === "pending") {
+  if (phase === "missing") return null;
+
+  if (phase === "pending" || phase === "processing") {
     return (
       <div className="rounded-xl border border-border bg-surface p-4 text-sm text-muted-foreground shadow-card">
-        Preparing recording for trainer review…
+        <div>Roleplay recording is being prepared. Please check again shortly.</div>
+        <button
+          type="button"
+          onClick={checkStatus}
+          disabled={checking}
+          className="mt-3 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-secondary disabled:opacity-60"
+        >
+          {checking ? "Checking…" : "Check Recording Status"}
+        </button>
       </div>
     );
   }
 
-  if (status === "failed" || !url) {
+  if (phase === "failed" || phase === "unavailable" || !url) {
     return (
       <div className="rounded-xl border border-border bg-surface p-4 text-sm text-muted-foreground shadow-card">
-        Audio recording could not be retrieved. Voice-based communication analysis
-        is unavailable for this attempt.
+        <div>
+          Roleplay recording is unavailable for this attempt. Transcript-based
+          evaluation remains available.
+        </div>
+        <button
+          type="button"
+          onClick={checkStatus}
+          disabled={checking}
+          className="mt-3 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-secondary disabled:opacity-60"
+        >
+          {checking ? "Checking…" : "Check Recording Status"}
+        </button>
       </div>
     );
   }
