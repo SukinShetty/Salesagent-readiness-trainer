@@ -283,7 +283,8 @@ export type CriticalComplianceStatus = "Passed" | "Passed with Warning" | "Faile
 export type AssessmentValidity =
   | "Valid for Certification"
   | "Practice Attempt Only"
-  | "Invalid Due to Incomplete Call";
+  | "Invalid Due to Incomplete Call"
+  | "Invalid Due to Insufficient Evidence";
 
 export type EvaluationRecord = {
   id: string;
@@ -317,7 +318,58 @@ export type EvaluationRecord = {
   strongestStage?: string;
   weakestStage?: string;
   dbSessionId?: string; // Server-side row id for audio + persisted transcript
+  isDemo?: boolean;
+  insufficientEvidence?: boolean;
 };
+
+/** Fallback text for any evidence field with no verifiable trainee quote. */
+export const NO_TRAINEE_EVIDENCE =
+  "No supporting trainee evidence found in the transcript.";
+
+/** Normalize a string for tolerant substring comparison. */
+export function normalizeForMatch(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[\u2018\u2019\u201C\u201D]/g, '"')
+    .replace(/[.,;:!?\-\u2014"]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function extractTraineeLines(transcript: string): string[] {
+  if (!transcript) return [];
+  return transcript
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .filter((l) => /^trainee\s*:/i.test(l))
+    .map((l) => l.replace(/^trainee\s*:\s*/i, ""));
+}
+
+/**
+ * Confirm the quoted text originated from the trainee in the current
+ * transcript. Used to gate any UI/PDF field that renders a quote so that
+ * we never present fabricated or cross-session evidence to a trainer.
+ */
+export function verifyTraineeQuote(
+  transcript: string | undefined,
+  quote: string | undefined | null,
+): boolean {
+  if (!quote || !transcript) return false;
+  const nq = normalizeForMatch(quote);
+  if (!nq || nq.length < 4) return false;
+  return extractTraineeLines(transcript)
+    .map(normalizeForMatch)
+    .some((l) => l.includes(nq));
+}
+
+/** Clear any cached transcript / evaluation / db session from the browser. */
+export function clearSessionEvaluationData() {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.removeItem(LAST_EVAL_KEY);
+  window.sessionStorage.removeItem(TRANSCRIPT_KEY);
+  window.sessionStorage.removeItem(DB_SESSION_KEY);
+}
 
 export type ReadinessBand =
   | "Production Ready"
