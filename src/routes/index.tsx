@@ -145,6 +145,13 @@ function StartTraining() {
                 options={PROVIDERS as readonly string[]}
               />
             </Field>
+            <Field label="Telecom Service">
+              <Select
+                value={form.telecomService}
+                onChange={(v) => update("telecomService", v as TrainingSession["telecomService"])}
+                options={TELECOM_SERVICES as readonly string[]}
+              />
+            </Field>
           </div>
         </section>
 
