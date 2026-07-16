@@ -1,6 +1,12 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ConversationProvider, useConversation } from "@elevenlabs/react";
+import {
+  ConversationProvider,
+  useConversationControls,
+  useConversationInput,
+  useConversationMode,
+  useConversationStatus,
+} from "@elevenlabs/react";
 import { AppShell } from "@/components/AppShell";
 import {
   DEMO_TRANSCRIPT,
@@ -12,7 +18,6 @@ import {
   saveTranscript,
   type TrainingSession,
 } from "@/lib/session";
-
 
 const AGENT_ID = "agent_6801kxj68508fhdb7p2hzrqbrerw";
 
@@ -34,123 +39,55 @@ type DisplayStatus =
   | "Connecting"
   | "Customer Listening"
   | "Customer Speaking"
+  | "Reconnecting"
   | "Roleplay Completed"
   | "Connection Failed";
 
-/**
- * For a private production agent, replace this with a fetch to a backend
- * server function that returns { conversationToken } (or a signed URL) and
- * pass it to conversation.startSession(...).
- */
-async function getSessionStartArgs(session: TrainingSession) {
-  return {
-    agentId: AGENT_ID,
-    connectionType: "webrtc" as const,
-    overrides: buildScenarioOverrides(session),
-  };
-}
-
-function buildScenarioOverrides(session: TrainingSession) {
-  const prompt = buildScenarioPrompt(session);
-  const firstMessage = buildFirstMessage(session);
-  return {
-    agent: {
-      prompt: { prompt },
-      firstMessage,
-    },
-  };
-}
-
-const SCENARIO_GUIDE: Record<string, string> = {
-  "Sales Call":
-    "You are a prospective customer considering a new telecom service. Engage as a genuine buyer with realistic questions.",
-  "Non-Sale Call":
-    "You are calling for a service-related reason (billing, support, account update) and are not looking to buy today.",
-  "Shopping Customer":
-    "You are actively comparing options. Avoid committing early and ask what alternatives exist.",
-  "Price-Sensitive Customer":
-    "You are focused on monthly price, fees, contract length, and future price increases. Push back on any unclear cost.",
-  "Objection-Heavy Customer":
-    "You raise several objections about value, pricing, contract, installation, and trust before considering agreement.",
-  "Customer Service Inquiry":
-    "You begin with a service-related question. Do not accept an irrelevant sales pitch.",
-  "Genuine Buyer":
-    "You show clear buying intent but expect correct discovery and closing before agreeing.",
-  "Impatient Customer":
-    "You demand short, direct answers and interrupt irrelevant explanations.",
-  "Skeptical Customer":
-    "You question claims, promotions, and reliability. Ask for proof or examples.",
-  "Price Comparison Call":
-    "You compare the proposed offer with your existing provider's pricing and terms.",
-  "Upsell Opportunity":
-    "You already use a basic service and may consider an upgraded plan if the value is clearly demonstrated.",
-  "Cross-Sell Opportunity":
-    "You already use one telecom service and may consider an additional service if it is relevant to your needs.",
-};
-
-const DIFFICULTY_GUIDE: Record<string, string> = {
-  Beginner: "Be cooperative and provide information easily when asked.",
-  Intermediate:
-    "Require good discovery and raise one or two realistic objections before agreeing to anything.",
-  Advanced:
-    "Reveal information only when asked, challenge vague answers, raise several objections, and require clear compliance explanations.",
-};
-
-function buildScenarioPrompt(session: TrainingSession) {
-  const {
-    project,
-    provider,
-    coreModule,
-    subOption,
-    scenario,
-    difficulty,
-    salespersonName,
-    employeeId,
-  } = session;
-
-  return [
-    "You are acting as a US telecom customer in a KGIS sales training roleplay.",
-    "",
-    `Project: ${project}`,
-    `Telecom Provider being pitched: ${provider}`,
-    `Core Training Module: ${coreModule}`,
-    `${SUB_OPTIONS[coreModule].label}: ${subOption}`,
-    `Customer scenario: ${scenario}`,
-    `Difficulty: ${difficulty}`,
-    `Trainee: ${salespersonName} (Trainee ID ${employeeId})`,
-    "",
-    "Stay in character as the customer at all times.",
-    "Do not behave like a trainer. Do not coach the trainee during the roleplay. Do not reveal the scoring rubric or that this is an evaluation.",
-    "Adapt your needs, questions, and objections to the selected scenario and difficulty.",
-    "Reveal personal details (household size, current provider, budget, usage) only when the trainee asks appropriate discovery questions.",
-    "",
-    "This is a proof-of-concept session. Use neutral, generic US telecom rules and disclosures. Do not invent specific provider tariffs, promotions, or legal terms.",
-    "Follow a realistic call flow for the selected project and provider: greeting, verification, discovery, recommendation, objection handling, disclosures, recap, and closing.",
-    "",
-    `Scenario behaviour — ${scenario}: ${SCENARIO_GUIDE[scenario] ?? ""}`,
-    `Difficulty behaviour — ${difficulty}: ${DIFFICULTY_GUIDE[difficulty] ?? ""}`,
-    "",
-    coreModule === "Component-Based Coaching Module"
-      ? `Focus the interaction primarily on the "${subOption}" stage so the trainee can practice this component.`
-      : coreModule === "Assessment Module"
-        ? `This is an assessment. Behave like a realistic end-to-end customer call and let the trainee demonstrate the full call flow without coaching.`
-        : `Run a ${subOption.toLowerCase()} appropriate for ${provider} under ${project}.`,
-    "",
-    `Start the call with a short, natural opening line appropriate to the "${scenario}" scenario. Wait for the trainee to respond.`,
-  ].join("\n");
-}
-
-function buildFirstMessage(session: TrainingSession) {
-  if (session.scenario === "Non-Sale Call" || session.scenario === "Customer Service Inquiry") {
-    return "Hi… I'm calling about my existing account, I had a question.";
+/** Safely format any error-like value from the SDK. */
+function getSafeErrorMessage(error: unknown): string {
+  try {
+    if (!error) return "Unknown voice connection error";
+    if (error instanceof Error) return error.message || "Unknown voice connection error";
+    if (typeof error === "string") return error;
+    if (typeof error === "object") {
+      const v = error as Record<string, unknown>;
+      return String(
+        v.error_type ?? v.message ?? v.reason ?? v.type ?? "Unknown voice connection error",
+      );
+    }
+    return String(error);
+  } catch {
+    return "Unknown voice connection error";
   }
-  return "Hi… I was looking into your services and wanted to ask a few questions.";
 }
 
+function isDataChannelOrRtcError(error: unknown): boolean {
+  const msg = getSafeErrorMessage(error).toLowerCase();
+  return (
+    msg.includes("datachannel") ||
+    msg.includes("data channel") ||
+    msg.includes("rtc") ||
+    msg.includes("peerconnection") ||
+    msg.includes("ice")
+  );
+}
 
 function LiveRoleplayPage() {
+  // Provider is mounted for the full lifetime of the route. Callbacks are
+  // stable via the wrapping component's refs; we do NOT recreate the provider.
   return (
-    <ConversationProvider>
+    <ConversationProvider
+      onConnect={() => console.log("[Voice] connected")}
+      onDisconnect={(details) => console.log("[Voice] disconnected", details)}
+      onError={(error) => console.warn("[Voice] error:", getSafeErrorMessage(error), error)}
+      onMessage={(message) => {
+        // Simplified: log only. No nested property access, no assumptions.
+        console.log("[Voice] message", message);
+      }}
+      onStatusChange={(s) => console.log("[Voice] status", s)}
+      onModeChange={(m) => console.log("[Voice] mode", m)}
+      onDebug={(d) => console.debug("[Voice] debug", d)}
+    >
       <LiveRoleplay />
     </ConversationProvider>
   );
@@ -158,20 +95,27 @@ function LiveRoleplayPage() {
 
 function LiveRoleplay() {
   const navigate = useNavigate();
+  const controls = useConversationControls();
+  const { status } = useConversationStatus();
+  const { isSpeaking } = useConversationMode();
+  const { isMuted, setMuted } = useConversationInput();
+
   const [session, setSession] = useState<TrainingSession | null>(null);
   const [transcriptText, setTranscriptText] = useState("");
   const [hasStarted, setHasStarted] = useState(false);
   const [ended, setEnded] = useState(false);
   const [micDenied, setMicDenied] = useState(false);
   const [connectFailed, setConnectFailed] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
+  const [isReconnecting, setIsReconnecting] = useState(false);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [durationSeconds, setDurationSeconds] = useState(0);
-  const appendedIdsRef = useRef<Set<string>>(new Set());
+  const startingRef = useRef(false);
+  const connectedOnceRef = useRef(false);
+  const startedAtRef = useRef<number | null>(null);
+  const fallbackTriedRef = useRef(false);
 
   useEffect(() => {
-    const s = loadSession();
-    setSession(s);
+    setSession(loadSession());
   }, []);
 
   const brief = useMemo(
@@ -188,105 +132,135 @@ function LiveRoleplay() {
     return () => window.clearInterval(id);
   }, [startedAt, ended]);
 
-  const appendLine = useCallback((who: "AI Customer" | "Trainee", text: string) => {
-    if (!text) return;
-    setTranscriptText((prev) => (prev ? `${prev}\n${who}: ${text}` : `${who}: ${text}`));
-  }, []);
+  // Track connected status for fallback detection
+  useEffect(() => {
+    if (status === "connected") {
+      connectedOnceRef.current = true;
+      setIsReconnecting(false);
+    }
+  }, [status]);
 
-  const conversation = useConversation({
-    onConnect: () => setConnectFailed(false),
-    onDisconnect: () => setEnded(true),
-    onError: () => setConnectFailed(true),
-    onMessage: (msg: unknown) => {
-      const m = msg as {
-        source?: string;
-        message?: string;
-        text?: string;
-        type?: string;
-      };
-      const text = m?.message ?? m?.text ?? "";
-      if (!text) return;
-      const key = `${m?.source ?? m?.type ?? "x"}:${text}`;
-      if (appendedIdsRef.current.has(key)) return;
-      appendedIdsRef.current.add(key);
-      if (m?.source === "user" || m?.type === "user_transcript") {
-        appendLine("Trainee", text);
-      } else if (m?.source === "ai" || m?.type === "agent_response") {
-        appendLine("AI Customer", text);
-      }
+  const startWith = useCallback(
+    async (connectionType: "webrtc" | "websocket") => {
+      // Minimum diagnostic session config — agent ID only.
+      await controls.startSession({
+        agentId: AGENT_ID,
+        connectionType,
+      });
+      startedAtRef.current = Date.now();
+      setStartedAt(Date.now());
     },
-  });
+    [controls],
+  );
 
-  const status = conversation.status;
-  const isSpeaking = conversation.isSpeaking;
+  // Detect early unexpected disconnects and fall back to WebSocket once.
+  useEffect(() => {
+    if (status !== "disconnected") return;
+    if (!hasStarted || ended) return;
+    if (fallbackTriedRef.current) {
+      setConnectFailed(true);
+      return;
+    }
+    const startedAt = startedAtRef.current;
+    const withinEarlyWindow = startedAt && Date.now() - startedAt < 10_000;
+    // Fallback if we never fully connected OR we dropped within 10s of start.
+    if (!connectedOnceRef.current || withinEarlyWindow) {
+      fallbackTriedRef.current = true;
+      setIsReconnecting(true);
+      (async () => {
+        try {
+          await startWith("websocket");
+        } catch (e) {
+          console.warn("[Voice] websocket fallback failed:", getSafeErrorMessage(e));
+          setConnectFailed(true);
+          setIsReconnecting(false);
+          setHasStarted(false);
+        }
+      })();
+    } else {
+      setEnded(true);
+    }
+  }, [status, hasStarted, ended, startWith]);
 
   const displayStatus: DisplayStatus = useMemo(() => {
+    if (isReconnecting) return "Reconnecting";
     if (connectFailed) return "Connection Failed";
     if (!hasStarted) return "Ready";
     if (status === "connecting") return "Connecting";
-    if (status === "connected") {
-      return isSpeaking ? "Customer Speaking" : "Customer Listening";
-    }
+    if (status === "connected") return isSpeaking ? "Customer Speaking" : "Customer Listening";
     if (ended || status === "disconnected") return "Roleplay Completed";
     return "Ready";
-  }, [connectFailed, hasStarted, status, isSpeaking, ended]);
+  }, [isReconnecting, connectFailed, hasStarted, status, isSpeaking, ended]);
 
   const start = useCallback(async () => {
-    if (!session) return;
+    if (!session || startingRef.current) return;
+    if (status === "connected" || status === "connecting") return;
+    startingRef.current = true;
     setConnectFailed(false);
     setMicDenied(false);
     setEnded(false);
-    setHasStarted(true);
+    connectedOnceRef.current = false;
+    fallbackTriedRef.current = false;
+
+    // Preflight
+    if (typeof window === "undefined" || !window.isSecureContext) {
+      console.warn("[Voice] page is not running over HTTPS; WebRTC may be blocked");
+    }
+    if (typeof RTCPeerConnection === "undefined") {
+      // WebRTC unavailable — go straight to WebSocket.
+      fallbackTriedRef.current = true;
+    }
+
     try {
-      await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Release the preflight stream; the SDK will open its own.
+      stream.getTracks().forEach((t) => t.stop());
     } catch {
       setMicDenied(true);
-      setHasStarted(false);
+      startingRef.current = false;
       return;
     }
+
+    setHasStarted(true);
     try {
-      const args = await getSessionStartArgs(session);
-      await conversation.startSession(args);
-      setStartedAt(Date.now());
-    } catch {
+      await startWith(fallbackTriedRef.current ? "websocket" : "webrtc");
+    } catch (e) {
+      console.warn("[Voice] startSession failed:", getSafeErrorMessage(e));
       setConnectFailed(true);
       setHasStarted(false);
+    } finally {
+      startingRef.current = false;
     }
-  }, [conversation, session]);
+  }, [session, status, startWith]);
 
   const end = useCallback(async () => {
     try {
-      await conversation.endSession();
+      await controls.endSession();
     } catch {
       /* noop */
     }
     setEnded(true);
-  }, [conversation]);
+    setIsReconnecting(false);
+  }, [controls]);
 
-  const toggleMute = useCallback(async () => {
-    const next = !isMuted;
+  const toggleMute = useCallback(() => {
     try {
-      const c = conversation as unknown as {
-        setMicMuted?: (m: boolean) => Promise<void> | void;
-      };
-      if (typeof c.setMicMuted === "function") {
-        await c.setMicMuted(next);
-      }
-      setIsMuted(next);
+      setMuted(!isMuted);
     } catch {
       /* noop */
     }
-  }, [conversation, isMuted]);
+  }, [isMuted, setMuted]);
 
   const useDemo = () => {
     setTranscriptText(DEMO_TRANSCRIPT);
     setEnded(true);
   };
 
+  // End session on route unmount
   useEffect(() => {
     return () => {
       try {
-        void Promise.resolve(conversation.endSession()).catch(() => {});
+        void Promise.resolve(controls.endSession()).catch(() => {});
       } catch {
         /* noop */
       }
@@ -305,6 +279,7 @@ function LiveRoleplay() {
   const statusStyles: Record<DisplayStatus, string> = {
     Ready: "bg-secondary text-secondary-foreground",
     Connecting: "bg-teal-soft text-teal",
+    Reconnecting: "bg-teal-soft text-teal",
     "Customer Listening":
       "bg-[color-mix(in_oklab,var(--success)_18%,transparent)] text-[color-mix(in_oklab,var(--success)_60%,black)]",
     "Customer Speaking":
@@ -314,8 +289,7 @@ function LiveRoleplay() {
       "bg-[color-mix(in_oklab,var(--destructive)_20%,transparent)] text-destructive",
   };
 
-  const isLive = status === "connected" || status === "connecting";
-
+  const isLive = status === "connected" || status === "connecting" || isReconnecting;
   const durationMMSS = formatDuration(durationSeconds);
 
   if (!session) {
@@ -371,7 +345,6 @@ function LiveRoleplay() {
           <HeaderChip label="Difficulty" value={session.difficulty} />
         </div>
       </div>
-
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
         {/* LEFT — Roleplay brief */}
@@ -492,7 +465,10 @@ function LiveRoleplay() {
                 Unable to start the roleplay. Please try again.
                 <div className="mt-2">
                   <button
-                    onClick={start}
+                    onClick={() => {
+                      fallbackTriedRef.current = false;
+                      void start();
+                    }}
                     className="rounded-md bg-destructive px-3 py-1.5 text-xs font-semibold text-destructive-foreground"
                   >
                     Retry
@@ -500,12 +476,17 @@ function LiveRoleplay() {
                 </div>
               </div>
             )}
+            {isReconnecting && (
+              <div className="mt-4 rounded-lg border border-border bg-teal-soft/60 p-3 text-sm text-teal">
+                Reconnecting roleplay…
+              </div>
+            )}
 
             {/* Controls */}
             <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
               <button
                 onClick={start}
-                disabled={isLive}
+                disabled={isLive || startingRef.current}
                 className="rounded-md bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-card hover:opacity-90 disabled:opacity-60"
               >
                 Start Roleplay
