@@ -178,18 +178,19 @@ function LiveRoleplay() {
   const [ended, setEnded] = useState(false);
   const [micDenied, setMicDenied] = useState(false);
   const [connectFailed, setConnectFailed] = useState(false);
-  const [isReconnecting, setIsReconnecting] = useState(false);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [durationSeconds, setDurationSeconds] = useState(0);
   const [isThinking, setIsThinking] = useState(false);
-  const startingRef = useRef(false);
-  const connectedOnceRef = useRef(false);
+  const sessionStartingRef = useRef(false);
+  const activeSessionRef = useRef(false);
+  const sessionEndingRef = useRef(false);
+  const userEndedSessionRef = useRef(false);
   const startedAtRef = useRef<number | null>(null);
-  const fallbackTriedRef = useRef(false);
   const thinkingTimerRef = useRef<number | null>(null);
   const wasUserSpeakingRef = useRef(false);
   const conversationIdRef = useRef<string | null>(null);
   const convIdAttachedRef = useRef(false);
+
 
   useEffect(() => {
     setSession(loadSession());
