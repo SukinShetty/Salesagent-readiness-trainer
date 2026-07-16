@@ -36,7 +36,18 @@ export type PdfBuildInput = {
 };
 
 const NA = "Not Available";
-const NOEV = "No Evidence Found";
+const NOEV = NO_TRAINEE_EVIDENCE;
+
+/**
+ * Only render a quote when it appears verbatim in the trainee lines of the
+ * session transcript. Otherwise return NO_TRAINEE_EVIDENCE plain text so the
+ * PDF never contains fabricated or cross-session evidence.
+ */
+function verifiedQuote(transcript: string | undefined, quote: string | undefined | null): string {
+  const q = (quote ?? "").trim();
+  if (!q || q === NO_TRAINEE_EVIDENCE) return NO_TRAINEE_EVIDENCE;
+  return verifyTraineeQuote(transcript, q) ? q : NO_TRAINEE_EVIDENCE;
+}
 const PENDING = "Pending Trainer Review";
 
 function fallback(v: unknown, alt = NA): string {
