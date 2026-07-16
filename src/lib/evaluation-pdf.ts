@@ -139,6 +139,49 @@ export function generateEvaluationPdf(input: PdfBuildInput): jsPDF {
   drawFirstPageHeader();
   y = 100;
 
+  // Demo Mode / Insufficient-evidence banners
+  if (input.record.isDemo) {
+    ensureSpace(38);
+    doc.setFillColor(255, 244, 214);
+    doc.setDrawColor(...AMBER);
+    doc.roundedRect(MARGIN_X, y, contentWidth, 32, 4, 4, "FD");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(...AMBER);
+    doc.text("DEMO MODE — illustrative sample transcript.", MARGIN_X + 10, y + 14);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.text(
+      "Not for real trainee coaching or certification decisions.",
+      MARGIN_X + 10,
+      y + 26,
+    );
+    y += 42;
+  }
+  if (input.record.insufficientEvidence) {
+    ensureSpace(42);
+    doc.setFillColor(253, 235, 236);
+    doc.setDrawColor(...RED);
+    doc.roundedRect(MARGIN_X, y, contentWidth, 36, 4, 4, "FD");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(...RED);
+    doc.text(
+      "Evaluation unavailable — transcript did not contain enough evidence.",
+      MARGIN_X + 10,
+      y + 14,
+    );
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.text(
+      "Assessment Validity: Invalid Due to Insufficient Evidence. No scores or certification decision were generated.",
+      MARGIN_X + 10,
+      y + 28,
+    );
+    y += 46;
+  }
+
+
   // Trainee details block
   const s = input.record.session;
   const r = input.record;
