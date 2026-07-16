@@ -4,6 +4,7 @@ import { ConversationProvider, useConversation } from "@elevenlabs/react";
 import { AppShell } from "@/components/AppShell";
 import {
   DEMO_TRANSCRIPT,
+  deriveMode,
   evaluateTranscript,
   getScenarioBrief,
   loadSession,
