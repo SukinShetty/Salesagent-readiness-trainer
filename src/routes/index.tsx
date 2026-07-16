@@ -1,15 +1,15 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import {
-  DEPARTMENTS,
+  CORE_MODULES,
   DIFFICULTIES,
   PROJECTS,
   PROVIDERS,
   SCENARIOS,
-  TELECOM_SERVICES,
-  TRAINING_MODES,
+  SUB_OPTIONS,
   saveSession,
+  type CoreModule,
   type TrainingSession,
 } from "@/lib/session";
 
@@ -25,7 +25,8 @@ export const Route = createFileRoute("/")({
       { property: "og:title", content: "KGIS Sales Training AI" },
       {
         property: "og:description",
-        content: "AI-powered call flow practice, customer roleplay, coaching and readiness evaluation.",
+        content:
+          "AI-powered call flow practice, customer roleplay, coaching and readiness evaluation.",
       },
     ],
   }),
@@ -34,15 +35,16 @@ export const Route = createFileRoute("/")({
 
 type FormState = TrainingSession;
 
+const DEFAULT_MODULE: CoreModule = "Full Call Flow Coaching Module";
+
 const initial: FormState = {
   salespersonName: "",
   employeeId: "",
-  department: DEPARTMENTS[0],
   batchName: "",
   project: PROJECTS[0],
   provider: PROVIDERS[0],
-  telecomService: TELECOM_SERVICES[0],
-  trainingMode: TRAINING_MODES[1].options[0], // Complete end-to-end sales call
+  coreModule: DEFAULT_MODULE,
+  subOption: SUB_OPTIONS[DEFAULT_MODULE].options[0],
   scenario: SCENARIOS[0],
   difficulty: DIFFICULTIES[1],
 };
@@ -55,10 +57,21 @@ function StartTraining() {
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
 
+  const subConfig = useMemo(() => SUB_OPTIONS[form.coreModule], [form.coreModule]);
+
+  const onCoreModuleChange = (value: CoreModule) => {
+    const cfg = SUB_OPTIONS[value];
+    setForm((f) => ({ ...f, coreModule: value, subOption: cfg.options[0] }));
+  };
+
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.salespersonName.trim() || !form.employeeId.trim() || !form.batchName.trim()) {
-      setError("Salesperson Name, Employee ID and Batch Name are required.");
+    if (
+      !form.salespersonName.trim() ||
+      !form.employeeId.trim() ||
+      !form.batchName.trim()
+    ) {
+      setError("Trainee Name, Trainee ID and Batch Name are required.");
       return;
     }
     setError(null);
@@ -83,10 +96,10 @@ function StartTraining() {
       >
         <section>
           <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Trainee
+            Trainee Details
           </h2>
           <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-            <Field label="Salesperson Name" required>
+            <Field label="Trainee Name" required>
               <input
                 type="text"
                 value={form.salespersonName}
@@ -96,7 +109,7 @@ function StartTraining() {
                 placeholder="e.g. Aditi Sharma"
               />
             </Field>
-            <Field label="Employee ID" required>
+            <Field label="Trainee ID" required>
               <input
                 type="text"
                 value={form.employeeId}
@@ -104,13 +117,6 @@ function StartTraining() {
                 maxLength={40}
                 className={inputCls}
                 placeholder="e.g. KGIS-1042"
-              />
-            </Field>
-            <Field label="Department">
-              <Select
-                value={form.department}
-                onChange={(v) => update("department", v)}
-                options={DEPARTMENTS as readonly string[]}
               />
             </Field>
             <Field label="Batch Name" required>
@@ -128,7 +134,7 @@ function StartTraining() {
 
         <section className="mt-8">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Project &amp; Provider
+            Project Configuration
           </h2>
           <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
             <Field label="Project">
@@ -145,11 +151,26 @@ function StartTraining() {
                 options={PROVIDERS as readonly string[]}
               />
             </Field>
-            <Field label="Telecom Service">
+          </div>
+        </section>
+
+        <section className="mt-8">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Core Training Module
+          </h2>
+          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+            <Field label="Core Training Module">
               <Select
-                value={form.telecomService}
-                onChange={(v) => update("telecomService", v as TrainingSession["telecomService"])}
-                options={TELECOM_SERVICES as readonly string[]}
+                value={form.coreModule}
+                onChange={(v) => onCoreModuleChange(v as CoreModule)}
+                options={CORE_MODULES as readonly string[]}
+              />
+            </Field>
+            <Field label={subConfig.label}>
+              <Select
+                value={form.subOption}
+                onChange={(v) => update("subOption", v)}
+                options={subConfig.options}
               />
             </Field>
           </div>
@@ -157,26 +178,9 @@ function StartTraining() {
 
         <section className="mt-8">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Training Module
+            Scenario Configuration
           </h2>
           <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-            <Field label="Training Mode">
-              <select
-                value={form.trainingMode}
-                onChange={(e) => update("trainingMode", e.target.value)}
-                className={inputCls}
-              >
-                {TRAINING_MODES.map((group) => (
-                  <optgroup key={group.group} label={group.group}>
-                    {group.options.map((opt) => (
-                      <option key={opt} value={opt}>
-                        {opt}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
-            </Field>
             <Field label="Customer Scenario">
               <Select
                 value={form.scenario}
