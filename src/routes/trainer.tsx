@@ -265,6 +265,7 @@ function AssignModal({
       batchName: t.batchName,
       project,
       provider,
+      telecomService: t.telecomService ?? "Internet",
       trainingMode,
       scenario,
       difficulty,

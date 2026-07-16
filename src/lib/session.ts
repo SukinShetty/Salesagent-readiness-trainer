@@ -72,6 +72,16 @@ export const SCENARIOS = [
 
 export const DIFFICULTIES = ["Beginner", "Intermediate", "Advanced"] as const;
 
+export const TELECOM_SERVICES = [
+  "Internet",
+  "TV",
+  "Wireless",
+  "Home Phone",
+  "Bundle / Multiple Services",
+] as const;
+
+export type TelecomService = (typeof TELECOM_SERVICES)[number];
+
 export type ScenarioBrief = {
   scenario: string;
   customerName: string;
@@ -161,6 +171,7 @@ export type TrainingSession = {
   batchName: string;
   project: string;
   provider: string;
+  telecomService: TelecomService;
   trainingMode: string;
   scenario: string;
   difficulty: string;
@@ -826,6 +837,7 @@ export const SAMPLE_HISTORY: EvaluationRecord[] = [
       batchName: "Batch A-14",
       project: "Project 1",
       provider: "Provider 2",
+      telecomService: "Internet",
       trainingMode: "Complete end-to-end sales call",
       scenario: "Price-Sensitive Customer",
       difficulty: "Intermediate",
@@ -855,6 +867,7 @@ export const SAMPLE_HISTORY: EvaluationRecord[] = [
       batchName: "Batch A-14",
       project: "Project 2",
       provider: "Provider 4",
+      telecomService: "Wireless",
       trainingMode: "Objection Handling",
       scenario: "Objection-Heavy Customer",
       difficulty: "Advanced",
@@ -884,6 +897,7 @@ export const SAMPLE_HISTORY: EvaluationRecord[] = [
       batchName: "Batch B-09",
       project: "Project 1",
       provider: "Provider 1",
+      telecomService: "Bundle / Multiple Services",
       trainingMode: "Final simulated call",
       scenario: "Genuine Buyer",
       difficulty: "Beginner",

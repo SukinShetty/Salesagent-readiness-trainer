@@ -7,6 +7,7 @@ import {
   PROJECTS,
   PROVIDERS,
   SCENARIOS,
+  TELECOM_SERVICES,
   TRAINING_MODES,
   saveSession,
   type TrainingSession,
@@ -40,6 +41,7 @@ const initial: FormState = {
   batchName: "",
   project: PROJECTS[0],
   provider: PROVIDERS[0],
+  telecomService: TELECOM_SERVICES[0],
   trainingMode: TRAINING_MODES[1].options[0], // Complete end-to-end sales call
   scenario: SCENARIOS[0],
   difficulty: DIFFICULTIES[1],
@@ -141,6 +143,13 @@ function StartTraining() {
                 value={form.provider}
                 onChange={(v) => update("provider", v)}
                 options={PROVIDERS as readonly string[]}
+              />
+            </Field>
+            <Field label="Telecom Service">
+              <Select
+                value={form.telecomService}
+                onChange={(v) => update("telecomService", v as TrainingSession["telecomService"])}
+                options={TELECOM_SERVICES as readonly string[]}
               />
             </Field>
           </div>
