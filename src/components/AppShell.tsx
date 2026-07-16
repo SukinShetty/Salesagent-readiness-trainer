@@ -49,7 +49,17 @@ export function AppShell({ children }: { children: ReactNode }) {
           </nav>
         </div>
       </header>
+      <div className="border-b border-border bg-[color-mix(in_oklab,var(--warning)_12%,transparent)]">
+        <div className="mx-auto max-w-[1200px] px-6 py-2 text-xs text-foreground">
+          <span className="font-semibold">POC note:</span>{" "}
+          This proof of concept uses sample project and provider configurations.
+          Production implementation requires KGIS to provide actual project call flows,
+          provider rules, mandatory disclosures, Quality Monitoring Forms, certification
+          thresholds, and approved training content.
+        </div>
+      </div>
       <main className="mx-auto max-w-[1200px] px-6 py-8">{children}</main>
+
       <footer className="mx-auto max-w-[1200px] px-6 py-6 text-xs text-muted-foreground">
         © KGIS Sales Training AI · Internal training platform
       </footer>
