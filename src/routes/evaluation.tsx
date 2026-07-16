@@ -1,5 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { AppShell } from "@/components/AppShell";
 import {
   loadLastEvaluation,
@@ -10,6 +11,13 @@ import {
   type ReadinessBand,
   type StageStatus,
 } from "@/lib/session";
+import { getRoleplaySession } from "@/lib/roleplay-sessions.functions";
+import { RoleplayAudioPlayer } from "@/components/RoleplayAudioPlayer";
+import {
+  evaluateCommunication,
+  ratingToneClass,
+  type VoiceEvaluation,
+} from "@/lib/voice-evaluation";
 
 export const Route = createFileRoute("/evaluation")({
   head: () => ({
@@ -38,9 +46,60 @@ function EvaluationPage() {
     "Accept AI Recommendation",
   );
   const [trainerNotes, setTrainerNotes] = useState("");
+  const [audioStatus, setAudioStatus] = useState<"pending" | "ready" | "failed" | "missing">(
+    "pending",
+  );
   const navigate = useNavigate();
+  const fetchSession = useServerFn(getRoleplaySession);
 
   useEffect(() => setRecord(loadLastEvaluation()), []);
+
+  // Poll audio status for this session so voice evaluation activates once
+  // the recording arrives from the provider.
+  useEffect(() => {
+    const dbId = record?.dbSessionId;
+    if (!dbId) {
+      setAudioStatus("missing");
+      return;
+    }
+    let cancelled = false;
+    let attempts = 0;
+    const tick = async () => {
+      if (cancelled) return;
+      attempts++;
+      try {
+        const row = await fetchSession({ data: { sessionId: dbId } });
+        if (cancelled) return;
+        if (row?.audio_status === "ready") setAudioStatus("ready");
+        else if (row?.audio_status === "failed") setAudioStatus("failed");
+        else if (attempts < 20) window.setTimeout(tick, 3_000);
+        else setAudioStatus("failed");
+      } catch {
+        setAudioStatus("failed");
+      }
+    };
+    void tick();
+    return () => {
+      cancelled = true;
+    };
+  }, [record?.dbSessionId, fetchSession]);
+
+  const voiceEval: VoiceEvaluation | null = useMemo(() => {
+    if (!record) return null;
+    return evaluateCommunication(
+      record.transcript ?? "",
+      record.durationSeconds ?? 0,
+      audioStatus === "ready",
+    );
+  }, [record, audioStatus]);
+
+  // Assessment Mode + audio-detected critical behaviour blocks Production Ready.
+  const voiceBlocksCertification = useMemo(() => {
+    if (!record || !voiceEval?.available) return false;
+    if (record.mode !== "Assessment Module") return false;
+    return voiceEval.flags.length > 0;
+  }, [record, voiceEval]);
+
 
   const finalOutcome = useMemo<CertificationOutcome | null>(() => {
     if (!record) return null;
@@ -51,10 +110,15 @@ function EvaluationPage() {
         return "Needs More Practice";
       case "Override to Not Certified":
         return "Not Certified";
-      default:
+      default: {
+        // Block Production Ready certification when audio flagged critical behaviour.
+        if (voiceBlocksCertification && record.certification === "Certified for Production") {
+          return "Needs More Practice";
+        }
         return record.certification;
+      }
     }
-  }, [record, trainerDecision]);
+  }, [record, trainerDecision, voiceBlocksCertification]);
 
   if (!record) {
     return (
@@ -160,6 +224,30 @@ function EvaluationPage() {
         <SummaryChip label="Call Duration" value={formatDuration(record.durationSeconds)} />
         <SummaryChip label="Number of Turns" value={String(record.turns ?? "—")} />
       </div>
+
+      {/* Trainer audio review */}
+      <div className="mt-6 rounded-xl border border-border bg-surface p-5 shadow-card">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">Roleplay Recording</h2>
+            <p className="text-xs text-muted-foreground">
+              Available to trainers for coaching and assessment review.
+            </p>
+          </div>
+        </div>
+        <div className="mt-3">
+          <RoleplayAudioPlayer sessionId={record.dbSessionId ?? null} />
+        </div>
+      </div>
+
+      {/* POC data privacy note */}
+      <div className="mt-4 rounded-xl border border-border bg-teal-soft/40 p-4 text-xs text-teal">
+        <span className="font-semibold">Proof of Concept:</span> Recording retention,
+        trainer access, download permissions, consent wording, and deletion policies
+        will be finalized with KGIS before production deployment.
+      </div>
+
+
 
 
       {/* Top-line score + certification */}
@@ -272,8 +360,11 @@ function EvaluationPage() {
         </div>
       </Section>
 
-      {/* Category scores + details */}
-      <Section title="Category Score Details">
+      {/* A. Call Content and Process */}
+      <Section title="A. Call Content and Process — Category Scores">
+        <p className="-mt-2 mb-3 text-xs text-muted-foreground">
+          Based on transcript and call-flow adherence.
+        </p>
         <div className="space-y-3">
           {(record.categoryDetails ?? []).map((c) => {
             const pct = (c.score / c.max) * 100;
@@ -314,6 +405,113 @@ function EvaluationPage() {
           })}
         </div>
       </Section>
+
+      {/* B. Communication and Customer Handling */}
+      <Section title="B. Communication and Customer Handling">
+        <p className="-mt-2 mb-3 text-xs text-muted-foreground">
+          Based on the roleplay audio recording and interaction behaviour.
+          Heuristic analysis for the POC — production integrates KGIS-provided
+          acoustic analysis.
+        </p>
+        {!voiceEval || !voiceEval.available ? (
+          <div className="rounded-xl border border-border bg-surface p-5 text-sm text-muted-foreground shadow-card">
+            {voiceEval?.reason ??
+              "Voice-based communication analysis was not completed."}
+          </div>
+        ) : (
+          <>
+            <div className="mb-4 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
+              <SummaryChip
+                label="Speaking Pace"
+                value={
+                  voiceEval.metrics.wordsPerMinute != null
+                    ? `${voiceEval.metrics.wordsPerMinute} wpm`
+                    : "—"
+                }
+              />
+              <SummaryChip
+                label="Filler Words"
+                value={String(voiceEval.metrics.fillerCount)}
+              />
+              <SummaryChip
+                label="Trainee Turns"
+                value={String(voiceEval.metrics.traineeTurns)}
+              />
+              <SummaryChip
+                label="Avg Turn Length"
+                value={`${voiceEval.metrics.avgTraineeTurnWords} words`}
+              />
+            </div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              {voiceEval.dimensions.map((d) => (
+                <div
+                  key={d.key}
+                  className="rounded-xl border border-border bg-surface p-4 shadow-card"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="text-sm font-semibold text-foreground">
+                      {d.label}
+                    </div>
+                    <span
+                      className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${ratingToneClass(d.rating)}`}
+                    >
+                      {d.rating}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-xs text-foreground">{d.explanation}</p>
+                  {d.evidence && (
+                    <p className="mt-1 text-xs italic text-muted-foreground">
+                      Evidence: {d.evidence}
+                    </p>
+                  )}
+                  <p className="mt-2 text-xs text-teal">
+                    <span className="font-semibold">Coaching:</span> {d.coaching}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </Section>
+
+      {/* Critical behaviour flags */}
+      <Section title="Critical Behaviour Flags">
+        {!voiceEval || !voiceEval.available ? (
+          <div className="rounded-xl border border-border bg-surface p-4 text-sm text-muted-foreground shadow-card">
+            Voice-based flag detection was not run because audio was unavailable.
+          </div>
+        ) : voiceEval.flags.length === 0 ? (
+          <div className="rounded-xl border border-border bg-[color-mix(in_oklab,var(--success)_10%,transparent)] p-4 text-sm text-foreground shadow-card">
+            No critical behaviour flags detected in this recording.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {voiceEval.flags.map((f) => (
+              <div
+                key={f.key}
+                className="rounded-xl border border-destructive/30 bg-[color-mix(in_oklab,var(--destructive)_10%,transparent)] p-4 shadow-card"
+              >
+                <div className="text-sm font-semibold text-destructive">
+                  {f.label}
+                </div>
+                {f.evidence && (
+                  <p className="mt-1 text-xs italic text-muted-foreground">
+                    {f.evidence}
+                  </p>
+                )}
+              </div>
+            ))}
+            {record.mode === "Assessment Module" && (
+              <p className="mt-2 text-xs font-medium text-destructive">
+                Critical flags detected — Production Ready certification is blocked
+                pending trainer review.
+              </p>
+            )}
+          </div>
+        )}
+      </Section>
+
+
 
       {/* Compliance gate */}
       <Section title="Compliance and Non-Negotiables">
