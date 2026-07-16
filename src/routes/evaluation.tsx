@@ -50,6 +50,8 @@ function EvaluationPage() {
   const [audioStatus, setAudioStatus] = useState<"pending" | "ready" | "failed" | "missing">(
     "pending",
   );
+  const [includeTranscript, setIncludeTranscript] = useState(false);
+  const [downloadState, setDownloadState] = useState<"idle" | "preparing" | "error">("idle");
   const navigate = useNavigate();
   const fetchSession = useServerFn(getRoleplaySession);
 
