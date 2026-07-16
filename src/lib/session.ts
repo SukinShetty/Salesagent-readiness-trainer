@@ -870,15 +870,15 @@ export const SAMPLE_HISTORY: EvaluationRecord[] = [
     session: {
       salespersonName: "Marcus Johnson",
       employeeId: "KGIS-1187",
-      department: "Customer Acquisition",
       batchName: "Batch A-14",
       project: "Project 2",
       provider: "Provider 4",
-      telecomService: "Wireless",
-      trainingMode: "Objection Handling",
+      coreModule: "Component-Based Coaching Module",
+      subOption: "Objection Handling",
       scenario: "Objection-Heavy Customer",
       difficulty: "Advanced",
     },
+
     overallScore: 72,
     categories: QMF_CATEGORIES.map((c) => ({
       name: c.name,
