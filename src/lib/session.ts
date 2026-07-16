@@ -840,15 +840,15 @@ export const SAMPLE_HISTORY: EvaluationRecord[] = [
     session: {
       salespersonName: "Aditi Sharma",
       employeeId: "KGIS-1042",
-      department: "Sales",
       batchName: "Batch A-14",
       project: "Project 1",
       provider: "Provider 2",
-      telecomService: "Internet",
-      trainingMode: "Complete end-to-end sales call",
+      coreModule: "Full Call Flow Coaching Module",
+      subOption: "End-to-End Call Simulation",
       scenario: "Price-Sensitive Customer",
       difficulty: "Intermediate",
     },
+
     overallScore: 88,
     categories: QMF_CATEGORIES.map((c) => ({
       name: c.name,
