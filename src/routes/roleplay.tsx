@@ -411,9 +411,10 @@ function LiveRoleplay() {
       if (convId) {
         conversationIdRef.current = convId;
         convIdAttachedRef.current = true;
-        void attachConvId({ data: { sessionId: dbSessionId, conversationId: convId } }).catch(
-          (e) => console.warn("[Session] attach conv id failed", e),
-        );
+        if (IS_DEV) console.log("[Roleplay] conversation ID:", convId);
+        void attachConvId({ data: { sessionId: dbSessionId, conversationId: convId } })
+          .then(() => IS_DEV && console.log("[Roleplay] conversation ID persisted"))
+          .catch((e) => console.warn("[Session] attach conv id failed", e));
         return;
       }
       if (attempts < 20) window.setTimeout(tick, 500);
