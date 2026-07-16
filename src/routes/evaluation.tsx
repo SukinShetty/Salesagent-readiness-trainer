@@ -626,17 +626,24 @@ function EvaluationPage() {
       {/* Transcript evidence */}
       <Section title="Transcript Evidence">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          {(record.evidence ?? []).map((e) => (
-            <div
-              key={e.label}
-              className="rounded-xl border border-border bg-surface p-4 shadow-card"
-            >
-              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                {e.label}
+          {(record.evidence ?? []).map((e) => {
+            const q = renderQuote(e.quote);
+            return (
+              <div
+                key={e.label}
+                className="rounded-xl border border-border bg-surface p-4 shadow-card"
+              >
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {e.label}
+                </div>
+                {q.isQuote ? (
+                  <p className="mt-2 text-sm italic text-foreground">“{q.text}”</p>
+                ) : (
+                  <p className="mt-2 text-sm text-muted-foreground">{q.text}</p>
+                )}
               </div>
-              <p className="mt-2 text-sm italic text-foreground">“{e.quote}”</p>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </Section>
 
