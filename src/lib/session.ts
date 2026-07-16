@@ -384,8 +384,10 @@ export function evaluateTranscript(
     .filter((l) => /^trainee\s*:/i.test(l))
     .map((l) => l.replace(/^trainee\s*:\s*/i, ""));
   const turns = lines.length;
-  const mode = deriveMode(session.trainingMode);
-  const componentFocus = mode === "Component Practice" ? session.trainingMode : null;
+  const mode = deriveMode(session.coreModule);
+  const componentFocus =
+    mode === "Component-Based Coaching Module" ? session.subOption : null;
+
 
   // ---- Category scoring with detail ----
   const categoryDefs: {
