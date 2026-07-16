@@ -27,11 +27,11 @@ export const Route = createFileRoute("/")({
         content:
           "Begin an AI-powered sales roleplay for US telecom call handling — configure the trainee, project, module and scenario.",
       },
-      { property: "og:title", content: "KGIS Sales Training AI" },
+      { property: "og:title", content: "Start Training · KGIS Sales Training AI" },
       {
         property: "og:description",
         content:
-          "AI-powered call flow practice, customer roleplay, coaching and readiness evaluation.",
+          "Begin an AI-powered sales roleplay for US telecom call handling — configure the trainee, project, module and scenario.",
       },
     ],
   }),

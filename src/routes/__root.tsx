@@ -77,12 +77,16 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "KGIS Sales Training AI" },
-      { name: "description", content: "AI-powered roleplay, coaching and sales readiness evaluation for US telecom sales agents." },
-      { property: "og:title", content: "KGIS Sales Training AI" },
-      { property: "og:description", content: "AI-powered voice roleplay and coaching for US telecom sales agents." },
+      { title: "Start Training · KGIS Sales Training AI" },
+      { name: "description", content: "Begin an AI-powered sales roleplay for US telecom call handling — configure the trainee, project, module and scenario." },
+      { property: "og:title", content: "Start Training · KGIS Sales Training AI" },
+      { property: "og:description", content: "Begin an AI-powered sales roleplay for US telecom call handling — configure the trainee, project, module and scenario." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: "Start Training · KGIS Sales Training AI" },
+      { name: "twitter:description", content: "Begin an AI-powered sales roleplay for US telecom call handling — configure the trainee, project, module and scenario." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/c238fa5d-c4b2-4337-be72-89945890f2e6/id-preview-4aa1d1d1--285c8638-29d1-466a-a69e-7898e90233c5.lovable.app-1784213940688.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/c238fa5d-c4b2-4337-be72-89945890f2e6/id-preview-4aa1d1d1--285c8638-29d1-466a-a69e-7898e90233c5.lovable.app-1784213940688.png" },
     ],
     links: [
       {
