@@ -409,12 +409,19 @@ function EvaluationPage() {
                     {stage.status === "Not Applicable" ? "—" : `${stage.score}/${stage.max}`}
                   </td>
                   <td className="px-4 py-3 align-top text-xs text-muted-foreground">
-                    {stage.evidence && (
-                      <div>
-                        <span className="font-medium text-foreground">Evidence:</span>{" "}
-                        <span className="italic">“{stage.evidence}”</span>
-                      </div>
-                    )}
+                    {(() => {
+                      const q = renderQuote(stage.evidence);
+                      return (
+                        <div>
+                          <span className="font-medium text-foreground">Evidence:</span>{" "}
+                          {q.isQuote ? (
+                            <span className="italic">“{q.text}”</span>
+                          ) : (
+                            <span>{q.text}</span>
+                          )}
+                        </div>
+                      );
+                    })()}
                     {stage.missed && (
                       <div className="mt-1">
                         <span className="font-medium text-[color-mix(in_oklab,var(--warning)_50%,black)]">Missed:</span>{" "}
