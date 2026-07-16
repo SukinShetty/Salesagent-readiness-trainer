@@ -138,19 +138,29 @@ function EvaluationPage() {
 
       {/* Session summary chips */}
       <div className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-3 lg:grid-cols-6">
-        <SummaryChip label="Salesperson" value={s.salespersonName} />
-        <SummaryChip label="Employee ID" value={s.employeeId} />
-        <SummaryChip label="Department" value={s.department} />
+        <SummaryChip label="Trainee Name" value={s.salespersonName} />
+        <SummaryChip label="Trainee ID" value={s.employeeId} />
         <SummaryChip label="Batch" value={s.batchName} />
         <SummaryChip label="Project" value={s.project} />
         <SummaryChip label="Telecom Provider" value={s.provider} />
-        <SummaryChip label="Training Mode" value={s.trainingMode} />
+        <SummaryChip label="Core Training Module" value={s.coreModule} />
+        <SummaryChip
+          label={
+            s.coreModule === "Component-Based Coaching Module"
+              ? "Training Stage"
+              : s.coreModule === "Assessment Module"
+                ? "Assessment Type"
+                : "Simulation Type"
+          }
+          value={s.subOption}
+        />
         <SummaryChip label="Scenario" value={s.scenario} />
         <SummaryChip label="Difficulty" value={s.difficulty} />
         <SummaryChip label="Roleplay Date" value={new Date(record.date).toLocaleDateString()} />
         <SummaryChip label="Call Duration" value={formatDuration(record.durationSeconds)} />
         <SummaryChip label="Number of Turns" value={String(record.turns ?? "—")} />
       </div>
+
 
       {/* Top-line score + certification */}
       <div className="mt-6 grid grid-cols-1 gap-5 md:grid-cols-3">

@@ -1,14 +1,6 @@
 // Shared option catalog + session storage for the KGIS Sales Training AI POC.
 
-export const DEPARTMENTS = [
-  "Sales",
-  "Customer Acquisition",
-  "Retention",
-  "Upselling",
-  "Customer Service",
-] as const;
-
-export const PROJECTS = ["Project 1", "Project 2", "Custom Project"] as const;
+export const PROJECTS = ["Project 1", "Project 2"] as const;
 
 export const PROVIDERS = [
   "Provider 1",
@@ -17,54 +9,73 @@ export const PROVIDERS = [
   "Provider 4",
   "Provider 5",
   "Provider 6",
-  "General Telecom Training",
+  "Other Future Provider",
 ] as const;
 
-export type TrainingModeGroup = {
-  group: "Component Practice" | "Full Call Flow Practice" | "Assessment Mode";
-  options: string[];
+export const CORE_MODULES = [
+  "Component-Based Coaching Module",
+  "Full Call Flow Coaching Module",
+  "Assessment Module",
+] as const;
+
+export type CoreModule = (typeof CORE_MODULES)[number];
+
+export const COMPONENT_STAGES = [
+  "Opening",
+  "Discovery and Fact Finding",
+  "Product Recommendation and Pitching",
+  "Objection Handling",
+  "Order Processing and Disclosures",
+  "Recap and Call Closing",
+] as const;
+
+export const SIMULATION_TYPES = [
+  "Sales Scenario",
+  "Non-Sales Scenario",
+  "Provider-Specific Interaction",
+  "End-to-End Call Simulation",
+] as const;
+
+export const ASSESSMENT_TYPES = [
+  "Final Trainee Evaluation",
+  "Certification Before Production",
+] as const;
+
+export const SUB_OPTIONS: Record<
+  CoreModule,
+  { label: string; options: readonly string[] }
+> = {
+  "Component-Based Coaching Module": {
+    label: "Training Stage",
+    options: COMPONENT_STAGES,
+  },
+  "Full Call Flow Coaching Module": {
+    label: "Simulation Type",
+    options: SIMULATION_TYPES,
+  },
+  "Assessment Module": {
+    label: "Assessment Type",
+    options: ASSESSMENT_TYPES,
+  },
 };
 
-export const TRAINING_MODES: TrainingModeGroup[] = [
-  {
-    group: "Component Practice",
-    options: [
-      "Opening and Greeting",
-      "Discovery and Fact Finding",
-      "Product Recommendation",
-      "FBB Pitching",
-      "Objection Handling",
-      "Order Processing and Disclosures",
-      "Closing and Recap",
-    ],
-  },
-  {
-    group: "Full Call Flow Practice",
-    options: [
-      "Complete end-to-end sales call",
-      "Sales scenario",
-      "Non-sales scenario",
-      "Provider-specific interaction",
-    ],
-  },
-  {
-    group: "Assessment Mode",
-    options: [
-      "Final simulated call",
-      "Performance scoring",
-      "Certification readiness",
-    ],
-  },
+// Kept for back-compat with trainer filters that flatten sub-options.
+export const TRAINING_MODES: { group: CoreModule; options: readonly string[] }[] = [
+  { group: "Component-Based Coaching Module", options: COMPONENT_STAGES },
+  { group: "Full Call Flow Coaching Module", options: SIMULATION_TYPES },
+  { group: "Assessment Module", options: ASSESSMENT_TYPES },
 ];
 
 export const SCENARIOS = [
-  "Price-Sensitive Customer",
+  "Sales Call",
+  "Non-Sale Call",
   "Shopping Customer",
-  "Skeptical Customer",
-  "Impatient Customer",
+  "Price-Sensitive Customer",
   "Objection-Heavy Customer",
-  "Genuine Buyer",
   "Customer Service Inquiry",
+  "Genuine Buyer",
+  "Impatient Customer",
+  "Skeptical Customer",
   "Price Comparison Call",
   "Upsell Opportunity",
   "Cross-Sell Opportunity",
@@ -72,15 +83,6 @@ export const SCENARIOS = [
 
 export const DIFFICULTIES = ["Beginner", "Intermediate", "Advanced"] as const;
 
-export const TELECOM_SERVICES = [
-  "Internet",
-  "TV",
-  "Wireless",
-  "Home Phone",
-  "Bundle / Multiple Services",
-] as const;
-
-export type TelecomService = (typeof TELECOM_SERVICES)[number];
 
 export type ScenarioBrief = {
   scenario: string;
@@ -165,17 +167,21 @@ export function getScenarioBrief(scenario: string): ScenarioBrief {
 }
 
 export type TrainingSession = {
-  salespersonName: string;
-  employeeId: string;
-  department: string;
+  salespersonName: string; // Trainee Name (UI label)
+  employeeId: string; // Trainee ID (UI label)
   batchName: string;
   project: string;
   provider: string;
-  telecomService: TelecomService;
-  trainingMode: string;
+  coreModule: CoreModule;
+  subOption: string;
   scenario: string;
   difficulty: string;
+  // Legacy optional fields (older stored sessions may include these)
+  trainingMode?: string;
+  department?: string;
+  telecomService?: string;
 };
+
 
 const SESSION_KEY = "kgis:session";
 const HISTORY_KEY = "kgis:history";
@@ -207,10 +213,8 @@ export function loadTranscript(): string {
   return window.sessionStorage.getItem(TRANSCRIPT_KEY) ?? "";
 }
 
-export type EvaluationMode =
-  | "Component Practice"
-  | "Full Call Flow Practice"
-  | "Assessment Mode";
+export type EvaluationMode = CoreModule;
+
 
 export type StageStatus =
   | "Completed"
@@ -344,12 +348,13 @@ export const CALL_FLOW_STAGES: { name: string; max: number }[] = [
   { name: "Customer Experience and Soft Skills", max: 5 },
 ];
 
-export function deriveMode(trainingMode: string): EvaluationMode {
-  for (const g of TRAINING_MODES) {
-    if (g.options.includes(trainingMode)) return g.group;
+export function deriveMode(coreModule: string | undefined): EvaluationMode {
+  if (coreModule && (CORE_MODULES as readonly string[]).includes(coreModule)) {
+    return coreModule as EvaluationMode;
   }
-  return "Full Call Flow Practice";
+  return "Full Call Flow Coaching Module";
 }
+
 
 type Match = { keys: string[]; evidence: string };
 function findLine(traineeLines: string[], keys: string[]): string {
@@ -379,8 +384,10 @@ export function evaluateTranscript(
     .filter((l) => /^trainee\s*:/i.test(l))
     .map((l) => l.replace(/^trainee\s*:\s*/i, ""));
   const turns = lines.length;
-  const mode = deriveMode(session.trainingMode);
-  const componentFocus = mode === "Component Practice" ? session.trainingMode : null;
+  const mode = deriveMode(session.coreModule);
+  const componentFocus =
+    mode === "Component-Based Coaching Module" ? session.subOption : null;
+
 
   // ---- Category scoring with detail ----
   const categoryDefs: {
@@ -650,7 +657,7 @@ export function evaluateTranscript(
   const tooShort = turns < 6 || durationSeconds < 60;
   const noClose = !has(["shall we", "schedule", "proceed", "get you started"]);
   let assessmentValidity: AssessmentValidity;
-  if (mode === "Assessment Mode") {
+  if (mode === "Assessment Module") {
     if (tooShort) assessmentValidity = "Invalid Due to Incomplete Call";
     else assessmentValidity = "Valid for Certification";
   } else {
@@ -663,13 +670,13 @@ export function evaluateTranscript(
   const gateReasons: string[] = [];
   if (criticalFailed) gateReasons.push("critical compliance item failed");
   if (tooShort) gateReasons.push("call transcript too short to fully evaluate");
-  if (mode === "Assessment Mode" && noClose) gateReasons.push("no closing attempt in assessment mode");
+  if (mode === "Assessment Module" && noClose) gateReasons.push("no closing attempt in assessment mode");
   const missedDisclosure = compliance.find(
     (c) => c.item === "Contract or term disclosure" && c.status === "Failed",
   );
   if (missedDisclosure) gateReasons.push("mandatory disclosure was missed");
 
-  if (mode !== "Assessment Mode") {
+  if (mode !== "Assessment Module") {
     certification = "Practice Attempt Only";
     certificationReason = "Practice session — no certification decision recorded.";
   } else if (gateReasons.length > 0) {
@@ -681,7 +688,7 @@ export function evaluateTranscript(
   }
 
   const readiness =
-    mode === "Assessment Mode" && gateReasons.length > 0 && readinessFromScore(overall) === "Production Ready"
+    mode === "Assessment Module" && gateReasons.length > 0 && readinessFromScore(overall) === "Production Ready"
       ? "Needs More Practice"
       : readinessFromScore(overall);
 
@@ -833,15 +840,15 @@ export const SAMPLE_HISTORY: EvaluationRecord[] = [
     session: {
       salespersonName: "Aditi Sharma",
       employeeId: "KGIS-1042",
-      department: "Sales",
       batchName: "Batch A-14",
       project: "Project 1",
       provider: "Provider 2",
-      telecomService: "Internet",
-      trainingMode: "Complete end-to-end sales call",
+      coreModule: "Full Call Flow Coaching Module",
+      subOption: "End-to-End Call Simulation",
       scenario: "Price-Sensitive Customer",
       difficulty: "Intermediate",
     },
+
     overallScore: 88,
     categories: QMF_CATEGORIES.map((c) => ({
       name: c.name,
@@ -863,15 +870,15 @@ export const SAMPLE_HISTORY: EvaluationRecord[] = [
     session: {
       salespersonName: "Marcus Johnson",
       employeeId: "KGIS-1187",
-      department: "Customer Acquisition",
       batchName: "Batch A-14",
       project: "Project 2",
       provider: "Provider 4",
-      telecomService: "Wireless",
-      trainingMode: "Objection Handling",
+      coreModule: "Component-Based Coaching Module",
+      subOption: "Objection Handling",
       scenario: "Objection-Heavy Customer",
       difficulty: "Advanced",
     },
+
     overallScore: 72,
     categories: QMF_CATEGORIES.map((c) => ({
       name: c.name,
@@ -893,15 +900,15 @@ export const SAMPLE_HISTORY: EvaluationRecord[] = [
     session: {
       salespersonName: "Priya Nair",
       employeeId: "KGIS-1256",
-      department: "Retention",
       batchName: "Batch B-09",
       project: "Project 1",
       provider: "Provider 1",
-      telecomService: "Bundle / Multiple Services",
-      trainingMode: "Final simulated call",
+      coreModule: "Assessment Module",
+      subOption: "Final Trainee Evaluation",
       scenario: "Genuine Buyer",
       difficulty: "Beginner",
     },
+
     overallScore: 62,
     categories: QMF_CATEGORIES.map((c) => ({
       name: c.name,
