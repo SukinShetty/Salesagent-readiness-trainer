@@ -369,10 +369,15 @@ function LiveRoleplay() {
     if (connectFailed) return "Connection Failed";
     if (!hasStarted) return "Ready";
     if (status === "connecting") return "Connecting";
-    if (status === "connected") return isSpeaking ? "Customer Speaking" : "Customer Listening";
+    if (status === "connected") {
+      if (isSpeaking) return "Customer Speaking";
+      if (isThinking) return "Customer Thinking";
+      return "Customer Listening";
+    }
     if (ended || status === "disconnected") return "Roleplay Completed";
     return "Ready";
-  }, [isReconnecting, connectFailed, hasStarted, status, isSpeaking, ended]);
+  }, [isReconnecting, connectFailed, hasStarted, status, isSpeaking, isThinking, ended]);
+
 
   const start = useCallback(async () => {
     if (!session || startingRef.current) return;
