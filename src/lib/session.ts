@@ -171,6 +171,7 @@ export type TrainingSession = {
   batchName: string;
   project: string;
   provider: string;
+  telecomService: TelecomService;
   trainingMode: string;
   scenario: string;
   difficulty: string;
