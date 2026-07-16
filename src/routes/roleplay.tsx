@@ -28,6 +28,7 @@ import { retrieveRoleplayAudio } from "@/lib/roleplay-audio.functions";
 
 const AGENT_ID = "agent_6801kxj68508fhdb7p2hzrqbrerw";
 const IS_DEV = import.meta.env.DEV;
+const DEMO_MODE_ENABLED = import.meta.env.VITE_ENABLE_DEMO_MODE === "true";
 
 export const Route = createFileRoute("/roleplay")({
   head: () => ({
