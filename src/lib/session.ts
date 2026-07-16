@@ -909,6 +909,7 @@ export function evaluateTranscript(
     previousScore,
     strongestStage: strongest[0]?.name,
     weakestStage: weakest[0]?.name,
+    isDemo: options.isDemo,
   };
 }
 
