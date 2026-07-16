@@ -460,7 +460,8 @@ export function generateEvaluationPdf(input: PdfBuildInput): jsPDF {
   ];
   const evRows = evidenceLabels.map((label) => {
     const found = evidence.find((e) => e.label.toLowerCase().includes(label.split(" ")[1]?.toLowerCase() ?? ""));
-    return [label, found ? `“${found.quote}”` : NOEV];
+    const verified = verifiedQuote(r.transcript, found?.quote);
+    return [label, verified === NO_TRAINEE_EVIDENCE ? verified : `“${verified}”`];
   });
   autoTable(doc, {
     startY: y,
