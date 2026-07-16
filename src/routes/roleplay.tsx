@@ -796,3 +796,40 @@ function formatDuration(seconds: number) {
   const s = (seconds % 60).toString().padStart(2, "0");
   return `${m}:${s}`;
 }
+
+/**
+ * Build a concise live-call prompt. Deliberately short: the customer needs
+ * only the facts required to stay in character. QMF scoring, evaluation
+ * rubrics and analytics are handled post-call and never sent per-turn.
+ */
+function buildLivePrompt(session: TrainingSession): string {
+  const brief = getScenarioBrief(session.scenario);
+  const lines = [
+    `You are ${brief.customerName}, a US telecom customer on a live sales call.`,
+    `Scenario: ${brief.scenario}.`,
+    `Personality: ${brief.personality}. Current mood: ${brief.mood}.`,
+    `Provider context: ${session.provider} · Project: ${session.project}.`,
+    `Difficulty: ${session.difficulty}.`,
+    "",
+    "What you know about yourself:",
+    ...brief.customerProfile.map((p) => `- ${p}`),
+    "",
+    "Your objective on this call:",
+    `- ${brief.customerObjective}`,
+    "",
+    "Behaviour rules:",
+    "- Speak naturally, one or two short sentences per turn.",
+    "- Share personal details only when the salesperson asks.",
+    "- Push back on vague answers and raise realistic objections.",
+    "- Require clear plain-English explanations of price, terms and compliance.",
+    "- Allow the salesperson to interrupt; do not talk over them.",
+    "- Do not evaluate, coach or score the salesperson. Stay in character.",
+  ];
+  return lines.join("\n");
+}
+
+function buildFirstMessage(session: TrainingSession): string {
+  const brief = getScenarioBrief(session.scenario);
+  return `Hi, this is ${brief.customerName}. I got your call about ${session.provider} — what's this about?`;
+}
+
