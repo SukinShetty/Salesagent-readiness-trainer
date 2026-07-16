@@ -110,10 +110,15 @@ function EvaluationPage() {
         return "Needs More Practice";
       case "Override to Not Certified":
         return "Not Certified";
-      default:
+      default: {
+        // Block Production Ready certification when audio flagged critical behaviour.
+        if (voiceBlocksCertification && record.certification === "Certified for Production") {
+          return "Needs More Practice";
+        }
         return record.certification;
+      }
     }
-  }, [record, trainerDecision]);
+  }, [record, trainerDecision, voiceBlocksCertification]);
 
   if (!record) {
     return (
