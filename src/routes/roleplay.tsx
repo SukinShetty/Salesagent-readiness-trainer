@@ -424,8 +424,10 @@ function LiveRoleplay() {
   }, [status, dbSessionId, controls, attachConvId]);
 
   const end = useCallback(async () => {
+    if (sessionEndingRef.current) return;
+    sessionEndingRef.current = true;
+    userEndedSessionRef.current = true;
     try {
-      // Grab the id one last time before disconnecting.
       if (!conversationIdRef.current) {
         try {
           conversationIdRef.current = controls.getId?.() ?? null;
@@ -433,36 +435,58 @@ function LiveRoleplay() {
           /* noop */
         }
       }
-      await controls.endSession();
-    } catch {
-      /* noop */
-    }
-    setEnded(true);
-    setIsReconnecting(false);
-
-    // Persist ended_at + transcript + duration, then kick off audio retrieval.
-    // Non-blocking so the trainer can generate the evaluation immediately.
-    if (dbSessionId) {
-      const duration = startedAtRef.current
-        ? Math.floor((Date.now() - startedAtRef.current) / 1000)
-        : durationSeconds;
-      void finalizeSession({
-        data: {
-          sessionId: dbSessionId,
-          endedAt: new Date().toISOString(),
-          durationSeconds: duration,
-          transcript: transcriptText,
-        },
-      }).catch((e) => console.warn("[Session] finalize failed", e));
-
-      const convId = conversationIdRef.current;
-      if (convId) {
-        void retrieveAudio({
-          data: { sessionId: dbSessionId, conversationId: convId },
-        }).catch((e) => console.warn("[Audio] retrieve failed", e));
+      try {
+        await controls.endSession();
+      } catch {
+        /* noop */
       }
+      activeSessionRef.current = false;
+      setEnded(true);
+
+      if (dbSessionId) {
+        const duration = startedAtRef.current
+          ? Math.floor((Date.now() - startedAtRef.current) / 1000)
+          : durationSeconds;
+        void finalizeSession({
+          data: {
+            sessionId: dbSessionId,
+            endedAt: new Date().toISOString(),
+            durationSeconds: duration,
+            transcript: transcriptText,
+          },
+        }).catch((e) => console.warn("[Session] finalize failed", e));
+
+        const convId = conversationIdRef.current;
+        if (convId) {
+          void retrieveAudio({
+            data: { sessionId: dbSessionId, conversationId: convId },
+          }).catch((e) => console.warn("[Audio] retrieve failed", e));
+        }
+      }
+    } finally {
+      sessionEndingRef.current = false;
     }
   }, [controls, dbSessionId, durationSeconds, transcriptText, finalizeSession, retrieveAudio]);
+
+  const retry = useCallback(async () => {
+    if (sessionStartingRef.current || sessionEndingRef.current) return;
+    // If a session somehow still exists, end it cleanly first.
+    if (activeSessionRef.current || status === "connected" || status === "connecting") {
+      sessionEndingRef.current = true;
+      try {
+        await controls.endSession();
+      } catch {
+        /* noop */
+      }
+      activeSessionRef.current = false;
+      sessionEndingRef.current = false;
+    }
+    setConnectFailed(false);
+    setHasStarted(false);
+    await new Promise((r) => setTimeout(r, 700));
+    void start();
+  }, [controls, start, status]);
+
 
   const toggleMute = useCallback(() => {
     try {
