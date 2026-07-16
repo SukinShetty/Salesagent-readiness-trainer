@@ -20,6 +20,7 @@ import {
 } from "@/lib/session";
 
 const AGENT_ID = "agent_6801kxj68508fhdb7p2hzrqbrerw";
+const IS_DEV = import.meta.env.DEV;
 
 export const Route = createFileRoute("/roleplay")({
   head: () => ({
@@ -38,6 +39,7 @@ type DisplayStatus =
   | "Ready"
   | "Connecting"
   | "Customer Listening"
+  | "Customer Thinking"
   | "Customer Speaking"
   | "Reconnecting"
   | "Roleplay Completed"
@@ -61,22 +63,91 @@ function getSafeErrorMessage(error: unknown): string {
   }
 }
 
+/**
+ * Module-level pub/sub for provider callbacks. The ConversationProvider is
+ * mounted once at the route level and its callback identities are stable;
+ * the inner component registers handlers here on mount.
+ */
+const voiceBus: {
+  onMessage: (m: unknown) => void;
+  onModeChange: (m: unknown) => void;
+} = { onMessage: () => {}, onModeChange: () => {} };
+
+/**
+ * Development-only latency tracker for turn-taking diagnostics.
+ * Logs the timings requested by L&D so trainers can tune the agent settings
+ * server-side. Nothing here is surfaced in the UI.
+ */
+const latency = {
+  userSpeechEnd: 0,
+  userTranscriptFinal: 0,
+  agentResponseStart: 0,
+  firstAudio: 0,
+  reset() {
+    this.userSpeechEnd = 0;
+    this.userTranscriptFinal = 0;
+    this.agentResponseStart = 0;
+    this.firstAudio = 0;
+  },
+  markUserSpeechEnd() {
+    if (!IS_DEV) return;
+    this.userSpeechEnd = performance.now();
+    console.log("[Latency] trainee stopped speaking");
+  },
+  markUserTranscriptFinal() {
+    if (!IS_DEV) return;
+    this.userTranscriptFinal = performance.now();
+    if (this.userSpeechEnd) {
+      console.log(
+        `[Latency] speech-end → transcript-final: ${Math.round(this.userTranscriptFinal - this.userSpeechEnd)}ms`,
+      );
+    }
+  },
+  markAgentResponseStart() {
+    if (!IS_DEV) return;
+    this.agentResponseStart = performance.now();
+    if (this.userTranscriptFinal) {
+      console.log(
+        `[Latency] transcript-final → agent-response: ${Math.round(this.agentResponseStart - this.userTranscriptFinal)}ms`,
+      );
+    }
+  },
+  markFirstAudio() {
+    if (!IS_DEV) return;
+    if (this.firstAudio) return; // only first chunk of the turn
+    this.firstAudio = performance.now();
+    if (this.agentResponseStart) {
+      console.log(
+        `[Latency] response-gen → first-audio: ${Math.round(this.firstAudio - this.agentResponseStart)}ms`,
+      );
+    }
+    if (this.userSpeechEnd) {
+      console.log(
+        `[Latency] total speech-end → first-audio: ${Math.round(this.firstAudio - this.userSpeechEnd)}ms`,
+      );
+    }
+  },
+  resetTurn() {
+    this.userSpeechEnd = 0;
+    this.userTranscriptFinal = 0;
+    this.agentResponseStart = 0;
+    this.firstAudio = 0;
+  },
+};
 
 function LiveRoleplayPage() {
-  // Provider is mounted for the full lifetime of the route. Callbacks are
-  // stable via the wrapping component's refs; we do NOT recreate the provider.
+  // Provider mounted once for the route's lifetime — callback identities
+  // are stable so the SDK never tears down mid-conversation.
   return (
     <ConversationProvider
       onConnect={() => console.log("[Voice] connected")}
       onDisconnect={(details) => console.log("[Voice] disconnected", details)}
       onError={(error) => console.warn("[Voice] error:", getSafeErrorMessage(error), error)}
       onMessage={(message) => {
-        // Simplified: log only. No nested property access, no assumptions.
-        console.log("[Voice] message", message);
+        voiceBus.onMessage(message);
       }}
       onStatusChange={(s) => console.log("[Voice] status", s)}
-      onModeChange={(m) => console.log("[Voice] mode", m)}
-      onDebug={(d) => console.debug("[Voice] debug", d)}
+      onModeChange={(m) => voiceBus.onModeChange(m)}
     >
       <LiveRoleplay />
     </ConversationProvider>
@@ -99,10 +170,13 @@ function LiveRoleplay() {
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [durationSeconds, setDurationSeconds] = useState(0);
+  const [isThinking, setIsThinking] = useState(false);
   const startingRef = useRef(false);
   const connectedOnceRef = useRef(false);
   const startedAtRef = useRef<number | null>(null);
   const fallbackTriedRef = useRef(false);
+  const thinkingTimerRef = useRef<number | null>(null);
+  const wasUserSpeakingRef = useRef(false);
 
   useEffect(() => {
     setSession(loadSession());
@@ -130,18 +204,136 @@ function LiveRoleplay() {
     }
   }, [status]);
 
+  // Wire the module-level provider bus into this component so we can react
+  // to transcript / audio events without recreating the provider each render.
+  useEffect(() => {
+    const clearThinking = () => {
+      if (thinkingTimerRef.current !== null) {
+        window.clearTimeout(thinkingTimerRef.current);
+        thinkingTimerRef.current = null;
+      }
+      setIsThinking(false);
+    };
+
+    const appendTranscript = (speaker: "Trainee" | "AI Customer", text: string) => {
+      if (!text) return;
+      // Non-blocking: functional setState avoids reading current transcript
+      // and never awaits storage. Persistence happens only on End Roleplay.
+      setTranscriptText((prev) => (prev ? `${prev}\n${speaker}: ${text}` : `${speaker}: ${text}`));
+    };
+
+    voiceBus.onMessage = (message: unknown) => {
+      const m = message as
+        | {
+            type?: string;
+            source?: string;
+            message?: string;
+            user_transcription_event?: { user_transcript?: string };
+            agent_response_event?: { agent_response?: string };
+            agent_response_correction_event?: { corrected_agent_response?: string };
+          }
+        | null
+        | undefined;
+      if (!m) return;
+      const type = m.type ?? m.source;
+
+      switch (type) {
+        case "user_transcript": {
+          latency.markUserTranscriptFinal();
+          const text =
+            m.user_transcription_event?.user_transcript ??
+            (m as { text?: string }).text ??
+            m.message ??
+            "";
+          appendTranscript("Trainee", String(text));
+          // Trigger delayed "thinking" indicator if the agent takes >1.5s
+          if (thinkingTimerRef.current !== null) {
+            window.clearTimeout(thinkingTimerRef.current);
+          }
+          thinkingTimerRef.current = window.setTimeout(() => {
+            setIsThinking(true);
+          }, 1500);
+          break;
+        }
+        case "agent_response": {
+          latency.markAgentResponseStart();
+          const text =
+            m.agent_response_event?.agent_response ??
+            (m as { text?: string }).text ??
+            m.message ??
+            "";
+          appendTranscript("AI Customer", String(text));
+          break;
+        }
+        case "agent_response_correction": {
+          const text = m.agent_response_correction_event?.corrected_agent_response ?? "";
+          if (text) appendTranscript("AI Customer", String(text));
+          break;
+        }
+        case "audio": {
+          latency.markFirstAudio();
+          clearThinking();
+          break;
+        }
+        case "interruption": {
+          clearThinking();
+          break;
+        }
+        default:
+          break;
+      }
+    };
+
+    voiceBus.onModeChange = (mode: unknown) => {
+      const mm = mode as { mode?: string } | string | undefined;
+      const value = typeof mm === "string" ? mm : mm?.mode;
+      // Detect the trainee's speech ending (user was speaking, now not).
+      const userSpeakingNow = value === "listening"; // agent is listening to user
+      // Fallback: infer from provider isSpeaking
+      if (wasUserSpeakingRef.current && !userSpeakingNow && value === "thinking") {
+        latency.markUserSpeechEnd();
+      }
+      wasUserSpeakingRef.current = userSpeakingNow;
+      if (value === "speaking") {
+        clearThinking();
+        // First-audio marker sometimes precedes; ensure recorded.
+        latency.markFirstAudio();
+        // Reset for next turn once agent starts talking
+        window.setTimeout(() => latency.resetTurn(), 50);
+      }
+    };
+
+    return () => {
+      voiceBus.onMessage = () => {};
+      voiceBus.onModeChange = () => {};
+      if (thinkingTimerRef.current !== null) window.clearTimeout(thinkingTimerRef.current);
+    };
+  }, []);
+
   const startWith = useCallback(
     async (connectionType: "webrtc" | "websocket") => {
-      // Minimum diagnostic session config — agent ID only.
+      if (!session) return;
+      // Concise live-call prompt: only what the customer needs to act in
+      // character. Evaluation, QMF scoring and analytics run post-call.
+      const prompt = buildLivePrompt(session);
+      const firstMessage = buildFirstMessage(session);
+      latency.reset();
       await controls.startSession({
         agentId: AGENT_ID,
         connectionType,
+        overrides: {
+          agent: {
+            prompt: { prompt },
+            firstMessage,
+          },
+        },
       });
       startedAtRef.current = Date.now();
       setStartedAt(Date.now());
     },
-    [controls],
+    [controls, session],
   );
+
 
   // Detect early unexpected disconnects and fall back to WebSocket once.
   useEffect(() => {
@@ -177,10 +369,15 @@ function LiveRoleplay() {
     if (connectFailed) return "Connection Failed";
     if (!hasStarted) return "Ready";
     if (status === "connecting") return "Connecting";
-    if (status === "connected") return isSpeaking ? "Customer Speaking" : "Customer Listening";
+    if (status === "connected") {
+      if (isSpeaking) return "Customer Speaking";
+      if (isThinking) return "Customer Thinking";
+      return "Customer Listening";
+    }
     if (ended || status === "disconnected") return "Roleplay Completed";
     return "Ready";
-  }, [isReconnecting, connectFailed, hasStarted, status, isSpeaking, ended]);
+  }, [isReconnecting, connectFailed, hasStarted, status, isSpeaking, isThinking, ended]);
+
 
   const start = useCallback(async () => {
     if (!session || startingRef.current) return;
@@ -274,6 +471,7 @@ function LiveRoleplay() {
       "bg-[color-mix(in_oklab,var(--success)_18%,transparent)] text-[color-mix(in_oklab,var(--success)_60%,black)]",
     "Customer Speaking":
       "bg-[color-mix(in_oklab,var(--warning)_25%,transparent)] text-[color-mix(in_oklab,var(--warning)_50%,black)]",
+    "Customer Thinking": "bg-teal-soft text-teal",
     "Roleplay Completed": "bg-secondary text-secondary-foreground",
     "Connection Failed":
       "bg-[color-mix(in_oklab,var(--destructive)_20%,transparent)] text-destructive",
@@ -598,3 +796,40 @@ function formatDuration(seconds: number) {
   const s = (seconds % 60).toString().padStart(2, "0");
   return `${m}:${s}`;
 }
+
+/**
+ * Build a concise live-call prompt. Deliberately short: the customer needs
+ * only the facts required to stay in character. QMF scoring, evaluation
+ * rubrics and analytics are handled post-call and never sent per-turn.
+ */
+function buildLivePrompt(session: TrainingSession): string {
+  const brief = getScenarioBrief(session.scenario);
+  const lines = [
+    `You are ${brief.customerName}, a US telecom customer on a live sales call.`,
+    `Scenario: ${brief.scenario}.`,
+    `Personality: ${brief.personality}. Current mood: ${brief.mood}.`,
+    `Provider context: ${session.provider} · Project: ${session.project}.`,
+    `Difficulty: ${session.difficulty}.`,
+    "",
+    "What you know about yourself:",
+    ...brief.customerProfile.map((p) => `- ${p}`),
+    "",
+    "Your objective on this call:",
+    `- ${brief.customerObjective}`,
+    "",
+    "Behaviour rules:",
+    "- Speak naturally, one or two short sentences per turn.",
+    "- Share personal details only when the salesperson asks.",
+    "- Push back on vague answers and raise realistic objections.",
+    "- Require clear plain-English explanations of price, terms and compliance.",
+    "- Allow the salesperson to interrupt; do not talk over them.",
+    "- Do not evaluate, coach or score the salesperson. Stay in character.",
+  ];
+  return lines.join("\n");
+}
+
+function buildFirstMessage(session: TrainingSession): string {
+  const brief = getScenarioBrief(session.scenario);
+  return `Hi, this is ${brief.customerName}. I got your call about ${session.provider} — what's this about?`;
+}
+
