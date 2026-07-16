@@ -7,6 +7,7 @@ import {
   PROJECTS,
   PROVIDERS,
   SCENARIOS,
+  TELECOM_SERVICES,
   TRAINING_MODES,
   saveSession,
   type TrainingSession,
