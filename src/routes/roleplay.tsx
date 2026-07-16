@@ -350,7 +350,7 @@ function LiveRoleplay() {
               {session.salespersonName}
             </h1>
             <div className="mt-0.5 text-xs text-muted-foreground">
-              {session.employeeId} · {session.department} · {session.batchName}
+              {session.employeeId} · {session.batchName}
             </div>
           </div>
           <div
@@ -359,14 +359,19 @@ function LiveRoleplay() {
             {displayStatus}
           </div>
         </div>
-        <div className="mt-4 grid grid-cols-2 gap-3 text-xs sm:grid-cols-5">
+        <div className="mt-4 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4 lg:grid-cols-7">
           <HeaderChip label="Project" value={session.project} />
           <HeaderChip label="Provider" value={session.provider} />
-          <HeaderChip label="Training Mode" value={session.trainingMode} />
+          <HeaderChip label="Core Training Module" value={session.coreModule} />
+          <HeaderChip
+            label={SUB_OPTIONS[session.coreModule]?.label ?? "Focus"}
+            value={session.subOption}
+          />
           <HeaderChip label="Scenario" value={session.scenario} />
           <HeaderChip label="Difficulty" value={session.difficulty} />
         </div>
       </div>
+
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
         {/* LEFT — Roleplay brief */}
