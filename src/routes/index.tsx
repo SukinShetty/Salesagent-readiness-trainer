@@ -9,6 +9,7 @@ import {
   PROVIDERS,
   SCENARIOS,
   SUB_OPTIONS,
+  clearSessionEvaluationData,
   getClientSessionId,
   saveDbSessionId,
   saveSession,
