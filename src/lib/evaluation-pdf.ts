@@ -264,7 +264,7 @@ export function generateEvaluationPdf(input: PdfBuildInput): jsPDF {
     st.stage,
     st.status,
     st.status === "Not Applicable" ? "—" : `${st.score}/${st.max}`,
-    fallback(st.evidence, NOEV),
+    verifiedQuote(r.transcript, st.evidence),
     fallback(st.missed, "—"),
   ]);
   autoTable(doc, {
