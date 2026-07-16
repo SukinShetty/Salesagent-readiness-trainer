@@ -170,10 +170,13 @@ function LiveRoleplay() {
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [durationSeconds, setDurationSeconds] = useState(0);
+  const [isThinking, setIsThinking] = useState(false);
   const startingRef = useRef(false);
   const connectedOnceRef = useRef(false);
   const startedAtRef = useRef<number | null>(null);
   const fallbackTriedRef = useRef(false);
+  const thinkingTimerRef = useRef<number | null>(null);
+  const wasUserSpeakingRef = useRef(false);
 
   useEffect(() => {
     setSession(loadSession());
@@ -201,18 +204,136 @@ function LiveRoleplay() {
     }
   }, [status]);
 
+  // Wire the module-level provider bus into this component so we can react
+  // to transcript / audio events without recreating the provider each render.
+  useEffect(() => {
+    const clearThinking = () => {
+      if (thinkingTimerRef.current !== null) {
+        window.clearTimeout(thinkingTimerRef.current);
+        thinkingTimerRef.current = null;
+      }
+      setIsThinking(false);
+    };
+
+    const appendTranscript = (speaker: "Trainee" | "AI Customer", text: string) => {
+      if (!text) return;
+      // Non-blocking: functional setState avoids reading current transcript
+      // and never awaits storage. Persistence happens only on End Roleplay.
+      setTranscriptText((prev) => (prev ? `${prev}\n${speaker}: ${text}` : `${speaker}: ${text}`));
+    };
+
+    voiceBus.onMessage = (message: unknown) => {
+      const m = message as
+        | {
+            type?: string;
+            source?: string;
+            message?: string;
+            user_transcription_event?: { user_transcript?: string };
+            agent_response_event?: { agent_response?: string };
+            agent_response_correction_event?: { corrected_agent_response?: string };
+          }
+        | null
+        | undefined;
+      if (!m) return;
+      const type = m.type ?? m.source;
+
+      switch (type) {
+        case "user_transcript": {
+          latency.markUserTranscriptFinal();
+          const text =
+            m.user_transcription_event?.user_transcript ??
+            (m as { text?: string }).text ??
+            m.message ??
+            "";
+          appendTranscript("Trainee", String(text));
+          // Trigger delayed "thinking" indicator if the agent takes >1.5s
+          if (thinkingTimerRef.current !== null) {
+            window.clearTimeout(thinkingTimerRef.current);
+          }
+          thinkingTimerRef.current = window.setTimeout(() => {
+            setIsThinking(true);
+          }, 1500);
+          break;
+        }
+        case "agent_response": {
+          latency.markAgentResponseStart();
+          const text =
+            m.agent_response_event?.agent_response ??
+            (m as { text?: string }).text ??
+            m.message ??
+            "";
+          appendTranscript("AI Customer", String(text));
+          break;
+        }
+        case "agent_response_correction": {
+          const text = m.agent_response_correction_event?.corrected_agent_response ?? "";
+          if (text) appendTranscript("AI Customer", String(text));
+          break;
+        }
+        case "audio": {
+          latency.markFirstAudio();
+          clearThinking();
+          break;
+        }
+        case "interruption": {
+          clearThinking();
+          break;
+        }
+        default:
+          break;
+      }
+    };
+
+    voiceBus.onModeChange = (mode: unknown) => {
+      const mm = mode as { mode?: string } | string | undefined;
+      const value = typeof mm === "string" ? mm : mm?.mode;
+      // Detect the trainee's speech ending (user was speaking, now not).
+      const userSpeakingNow = value === "listening"; // agent is listening to user
+      // Fallback: infer from provider isSpeaking
+      if (wasUserSpeakingRef.current && !userSpeakingNow && value === "thinking") {
+        latency.markUserSpeechEnd();
+      }
+      wasUserSpeakingRef.current = userSpeakingNow;
+      if (value === "speaking") {
+        clearThinking();
+        // First-audio marker sometimes precedes; ensure recorded.
+        latency.markFirstAudio();
+        // Reset for next turn once agent starts talking
+        window.setTimeout(() => latency.resetTurn(), 50);
+      }
+    };
+
+    return () => {
+      voiceBus.onMessage = () => {};
+      voiceBus.onModeChange = () => {};
+      if (thinkingTimerRef.current !== null) window.clearTimeout(thinkingTimerRef.current);
+    };
+  }, []);
+
   const startWith = useCallback(
     async (connectionType: "webrtc" | "websocket") => {
-      // Minimum diagnostic session config — agent ID only.
+      if (!session) return;
+      // Concise live-call prompt: only what the customer needs to act in
+      // character. Evaluation, QMF scoring and analytics run post-call.
+      const prompt = buildLivePrompt(session);
+      const firstMessage = buildFirstMessage(session);
+      latency.reset();
       await controls.startSession({
         agentId: AGENT_ID,
         connectionType,
+        overrides: {
+          agent: {
+            prompt: { prompt },
+            firstMessage,
+          },
+        },
       });
       startedAtRef.current = Date.now();
       setStartedAt(Date.now());
     },
-    [controls],
+    [controls, session],
   );
+
 
   // Detect early unexpected disconnects and fall back to WebSocket once.
   useEffect(() => {
